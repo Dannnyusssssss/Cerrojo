@@ -1,0 +1,19 @@
+# Dependencias
+node_modules/
+
+# Builds y cobertura
+dist/
+coverage/
+*.tsbuildinfo
+
+# Entorno y claves
+.env
+.env.*
+*.pem
+*.key
+
+# Registros y temporales
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
