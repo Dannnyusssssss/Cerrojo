@@ -1,0 +1,214 @@
+/**
+ * Construye la vista 3D de una sala a partir de sus datos y la libera al cambiar de sala.
+ */
+import {
+  BoxGeometry,
+  Group,
+  HemisphereLight,
+  Mesh,
+  MeshStandardMaterial,
+  PlaneGeometry,
+  PointLight,
+  SphereGeometry,
+  type Material,
+  type Object3D,
+} from 'three';
+import { QUALITY_PROFILES, type Quality } from '../data/config';
+import type { FurnitureDef, RoomDef } from '../game/room';
+import { buildOpenBox, createProp, forEachMesh, interiorMaterial, type PropView } from './props';
+import { TextureFactory } from './textures';
+
+export class RoomView {
+  readonly group = new Group();
+  readonly props = new Map<string, PropView>();
+  private readonly textures: TextureFactory;
+
+  constructor(room: RoomDef, quality: Quality) {
+    const profile = QUALITY_PROFILES[quality];
+    this.textures = new TextureFactory(profile.textureSize);
+    this.buildShell(room);
+    for (const f of room.furniture) this.group.add(this.buildFurniture(f));
+    for (const def of room.interactables) {
+      const prop = createProp(def, this.textures);
+      this.props.set(def.id, prop);
+      this.group.add(prop.root);
+    }
+    this.buildLights(room, profile.shadows);
+  }
+
+  update(dt: number): void {
+    for (const prop of this.props.values()) prop.update(dt);
+  }
+
+  private buildShell(room: RoomDef): void {
+    const { width: w, depth: d, height: h } = room;
+    const floor = new Mesh(
+      new PlaneGeometry(w, d),
+      new MeshStandardMaterial({
+        map: this.textures.floor({ x: w / 1.5, y: d / 1.5 }),
+        roughness: 0.85,
+      }),
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+
+    const ceiling = new Mesh(
+      new PlaneGeometry(w, d),
+      new MeshStandardMaterial({ map: this.textures.ceiling(), roughness: 1 }),
+    );
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.y = h;
+
+    const wallMaterial = (length: number): MeshStandardMaterial =>
+      new MeshStandardMaterial({
+        map: this.textures.wallpaper({ x: length / 1.5, y: h / 1.5 }),
+        roughness: 0.95,
+      });
+    const walls: { x: number; z: number; ry: number; length: number }[] = [
+      { x: 0, z: -d / 2, ry: 0, length: w },
+      { x: 0, z: d / 2, ry: Math.PI, length: w },
+      { x: -w / 2, z: 0, ry: Math.PI / 2, length: d },
+      { x: w / 2, z: 0, ry: -Math.PI / 2, length: d },
+    ];
+    for (const wall of walls) {
+      const mesh = new Mesh(new PlaneGeometry(wall.length, h), wallMaterial(wall.length));
+      mesh.position.set(wall.x, h / 2, wall.z);
+      mesh.rotation.y = wall.ry;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+    }
+    // Rodapié para marcar el encuentro entre suelo y pared.
+    const trim = new MeshStandardMaterial({ color: 0x5a3b22, roughness: 0.7 });
+    for (const wall of walls) {
+      const board = new Mesh(new BoxGeometry(wall.length, 0.1, 0.02), trim);
+      board.position.set(wall.x, 0.05, wall.z);
+      board.rotation.y = wall.ry;
+      board.translateZ(0.01);
+      this.group.add(board);
+    }
+    this.group.add(floor, ceiling);
+  }
+
+  private buildFurniture(f: FurnitureDef): Object3D {
+    const group = new Group();
+    group.position.set(f.x, 0, f.z);
+    const wood = new MeshStandardMaterial({
+      map: this.textures.wood(),
+      color: 0xd2a679,
+      roughness: 0.7,
+    });
+    const dark = new MeshStandardMaterial({
+      map: this.textures.wood(),
+      color: 0x8a6a4a,
+      roughness: 0.7,
+    });
+    const add = (
+      w: number,
+      h: number,
+      d: number,
+      x: number,
+      y: number,
+      z: number,
+      m: Material,
+    ): void => {
+      const mesh = new Mesh(new BoxGeometry(w, h, d), m);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    };
+    const top = 0.05;
+    switch (f.kind) {
+      case 'table':
+      case 'desk': {
+        add(f.w, top, f.d, 0, f.h - top / 2, 0, wood);
+        const legX = f.w / 2 - 0.05;
+        const legZ = f.d / 2 - 0.05;
+        for (const sx of [-1, 1]) {
+          for (const sz of [-1, 1])
+            add(0.06, f.h - top, 0.06, sx * legX, (f.h - top) / 2, sz * legZ, dark);
+        }
+        if (f.kind === 'desk') {
+          // Cuerpo de cajones bajo el tablero (el cajón interactuable va delante).
+          add(0.6, 0.3, f.d - 0.04, -f.w / 2 + 0.4, f.h - top - 0.15, 0, dark);
+        }
+        break;
+      }
+      case 'cabinet': {
+        // Armario hueco con el frente abierto hacia la sala (-x); la puerta es un objeto aparte.
+        const carcass = buildOpenBox(f.w, f.h, f.d, 'nx', dark, interiorMaterial(0x3a2416));
+        // Unos milímetros sobre el suelo para que el fondo no parpadee contra él.
+        carcass.position.y = f.h / 2 + 0.003;
+        group.add(carcass);
+        // Marco frontal: da grosor visible a las paredes alrededor de la abertura.
+        const frame = 0.05;
+        const fx = -f.w / 2 + 0.015;
+        for (const side of [-1, 1]) {
+          add(0.03, f.h, frame, fx, f.h / 2, side * (f.d / 2 - frame / 2), dark);
+        }
+        add(0.03, frame, f.d, fx, f.h - frame / 2, 0, dark);
+        add(0.03, 0.1, f.d, fx, 0.05, 0, dark);
+        // Estantes interiores, más claros que el fondo para que se lea la profundidad.
+        const shelfMat = new MeshStandardMaterial({ color: 0x7a5232, roughness: 0.8 });
+        for (const level of [0.36, 0.66]) {
+          add(f.w - 0.03, 0.025, f.d - 0.02, 0.015, f.h * level, 0, shelfMat);
+        }
+        break;
+      }
+      case 'shelf': {
+        const shelves = 4;
+        add(f.w, f.h, 0.03, 0, f.h / 2, -f.d / 2 + 0.015, dark);
+        add(f.w, f.h, 0.03, 0, f.h / 2, f.d / 2 - 0.015, dark);
+        add(0.03, f.h, f.d, -f.w / 2 + 0.015, f.h / 2, 0, dark);
+        const spines = new MeshStandardMaterial({
+          map: this.textures.bookSpines(),
+          roughness: 0.8,
+        });
+        for (let i = 0; i <= shelves; i++) {
+          const y = (i / shelves) * (f.h - 0.03) + 0.015;
+          add(f.w, 0.03, f.d, 0, y, 0, wood);
+          if (i < shelves) {
+            // Fila de libros decorativos, de cara a la sala (+x).
+            const rowH = (f.h / shelves) * 0.7;
+            const row = new Mesh(new PlaneGeometry(f.d - 0.08, rowH), spines);
+            row.position.set(f.w / 2 - 0.12, y + 0.015 + rowH / 2, 0);
+            row.rotation.y = Math.PI / 2;
+            group.add(row);
+          }
+        }
+        break;
+      }
+    }
+    return group;
+  }
+
+  private buildLights(room: RoomDef, shadows: boolean): void {
+    this.group.add(new HemisphereLight(0xfff1dc, 0x5a4636, 1.2));
+    const lamp = new PointLight(0xffd9a8, 9, 12, 1.6);
+    lamp.position.set(0, room.height - 0.35, 0);
+    lamp.castShadow = shadows;
+    lamp.shadow.mapSize.set(1024, 1024);
+    lamp.shadow.bias = -0.002;
+    this.group.add(lamp);
+    // Bombilla visible: material emisivo, no una luz adicional.
+    const bulb = new Mesh(
+      new SphereGeometry(0.08, 16, 12),
+      new MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffd9a8, emissiveIntensity: 2 }),
+    );
+    bulb.position.copy(lamp.position);
+    this.group.add(bulb);
+  }
+
+  dispose(): void {
+    const materials = new Set<Material>();
+    forEachMesh(this.group, (m) => {
+      m.geometry.dispose();
+      const list = Array.isArray(m.material) ? m.material : [m.material];
+      for (const material of list) materials.add(material);
+    });
+    for (const material of materials) material.dispose();
+    this.textures.dispose();
+    this.group.removeFromParent();
+    this.props.clear();
+  }
+}
