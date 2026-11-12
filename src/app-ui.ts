@@ -1,13 +1,18 @@
 /**
- * Construcción de la interfaz del juego y conexión de sus eventos con el controlador (App).
- * Aquí solo se crean piezas y se enlazan llamadas; las decisiones las toma el controlador.
+ * Construcción de la interfaz del juego y conexión de sus eventos con el controlador (App) y
+ * con las acciones dentro de la sala (PlayActions). Aquí solo se crean piezas y se enlazan
+ * llamadas; las decisiones las toman el controlador y la lógica.
  */
+import { PlayActions, type PlayHost } from './app-play';
+import type { AudioEngine } from './audio/engine';
+import { WHEEL_SIGNAL } from './game/signals';
 import type { ActionIntent, InputState } from './core/input';
 import { INSPECT, type Settings } from './data/config';
 import type { Mode, ModeEvent } from './game/mode';
 import type { ItemDef } from './game/room';
 import type { World } from './game/world';
 import type { GameView } from './render/game-view';
+import { HintPanel } from './ui/hint-panel';
 import { Hud } from './ui/hud';
 import { InputBinding } from './ui/input-binding';
 import { InventoryBar } from './ui/inventory-bar';
@@ -23,12 +28,16 @@ export interface UiController {
   dispatch(event: ModeEvent): void;
   onAction(action: ActionIntent): void;
   onTap(clientX: number, clientY: number): void;
-  selectSlot(index: number): void;
-  /** «Combinar»: empieza o cancela la elección del segundo objeto. */
-  toggleCombine(): void;
   endInspect(): void;
-  play(): void;
+  chooseRoom(index: number): void;
+  continueGame(): void;
   replay(): void;
+  nextRoom(): void;
+  restartRoom(): void;
+  /** Pausa: silenciar o activar el sonido (como la tecla M). */
+  toggleMute(): void;
+  goRooms(): void;
+  clearData(): void;
   updateSettings(values: Settings): void;
   onPointerLockChange(locked: boolean): void;
   enableTouch(): void;
@@ -40,7 +49,9 @@ export interface GameUi {
   touch: TouchControls;
   inventoryBar: InventoryBar;
   panels: PuzzlePanels;
+  hintPanel: HintPanel;
   binding: InputBinding;
+  play: PlayActions;
 }
 
 export function buildGameUi(
@@ -49,13 +60,38 @@ export function buildGameUi(
   input: InputState,
   items: readonly ItemDef[],
   app: UiController,
+  host: PlayHost,
+  audio: AudioEngine,
 ): GameUi {
+  // Se crean antes que los paneles que las usan; se conectan al final.
+  let play: PlayActions | null = null;
+  const withPlay = (action: (p: PlayActions) => void): void => {
+    if (play) action(play);
+  };
   const hud = new Hud(() => {
     app.endInspect();
   });
   const menus = new Menus({
-    onPlay: () => {
-      app.play();
+    onContinue: () => {
+      app.continueGame();
+    },
+    onChooseRoom: (index) => {
+      app.chooseRoom(index);
+    },
+    onNextRoom: () => {
+      app.nextRoom();
+    },
+    onRooms: () => {
+      app.goRooms();
+    },
+    onRestart: () => {
+      app.restartRoom();
+    },
+    onToggleMute: () => {
+      app.toggleMute();
+    },
+    onClearData: () => {
+      app.clearData();
     },
     onResume: () => {
       app.dispatch('resume');
@@ -65,9 +101,6 @@ export function buildGameUi(
     },
     onReplay: () => {
       app.replay();
-    },
-    onHome: () => {
-      app.dispatch('home');
     },
   });
   const touch = new TouchControls({
@@ -80,14 +113,23 @@ export function buildGameUi(
     onInteract: () => {
       app.onAction('interact');
     },
+    onHint: () => {
+      withPlay((p) => {
+        p.requestHint();
+      });
+    },
   });
   const inventoryBar = new InventoryBar(
     items,
     (index) => {
-      app.selectSlot(index);
+      withPlay((p) => {
+        p.selectSlot(index);
+      });
     },
     () => {
-      app.toggleCombine();
+      withPlay((p) => {
+        p.toggleCombine();
+      });
     },
   );
   const panels = new PuzzlePanels(
@@ -96,8 +138,22 @@ export function buildGameUi(
     () => {
       app.dispatch('closePanel');
     },
+    () => {
+      audio.play(WHEEL_SIGNAL.sound);
+    },
   );
-  stage.append(hud.root, inventoryBar.root, touch.root, panels.root, menus.root);
+  const hintPanel = new HintPanel({
+    view: () => play?.hintView() ?? { texts: [], next: null, none: true },
+    reveal: () => {
+      withPlay((p) => {
+        p.revealHint();
+      });
+    },
+    onClose: () => {
+      app.dispatch('closePanel');
+    },
+  });
+  stage.append(hud.root, inventoryBar.root, touch.root, panels.root, hintPanel.root, menus.root);
   const binding = new InputBinding(input, view.canvas, {
     inGame: () => app.currentMode === 'playing' || app.currentMode === 'inspecting',
     exploring: () => app.currentMode === 'playing',
@@ -126,8 +182,11 @@ export function buildGameUi(
     },
     slotsActive: () => app.currentMode === 'playing',
     onSlot: (index) => {
-      app.selectSlot(index);
+      withPlay((p) => {
+        p.selectSlot(index);
+      });
     },
   });
-  return { hud, menus, touch, inventoryBar, panels, binding };
+  play = new PlayActions(host, { hud, view, panels, hintPanel });
+  return { hud, menus, touch, inventoryBar, panels, hintPanel, binding, play };
 }

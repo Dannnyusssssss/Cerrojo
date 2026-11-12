@@ -21,6 +21,8 @@ export interface WheelPanelCallbacks {
   onTry(values: readonly number[]): boolean;
   onClose(): void;
   onSolved(): void;
+  /** Una rueda giró (señal sonora; lo visible es el valor nuevo de la rueda). */
+  onTurn(): void;
 }
 
 /** Cantidad de valores por los que pasa una rueda. */
@@ -203,6 +205,7 @@ export class WheelPanel {
     this.values[index] = stepDial(this.values[index] ?? 0, delta, faceSize(this.face));
     const cell = this.cells[index];
     if (cell) this.paint(index, cell);
+    this.cb.onTurn();
     this.shell.message.textContent = '';
     this.root.classList.remove('panel-wrong');
   }

@@ -52,6 +52,12 @@ export class GameView {
     this.scene.scene.add(this.roomView.group);
   }
 
+  /** Geometrías y texturas vivas en la GPU (para vigilar fugas en el overlay de depuración). */
+  resources(): { geometries: number; textures: number } {
+    const { geometries, textures } = this.scene.renderer.info.memory;
+    return { geometries, textures };
+  }
+
   sync(state: GameState): void {
     this.roomView?.sync(state, false);
   }

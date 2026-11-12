@@ -3,6 +3,7 @@
  * puzzles resueltos y colocaciones. Toda acción del jugador pasa por aquí. Equivocarse nunca
  * gasta ni pierde nada.
  */
+import { HintLedger } from './hints';
 import { Inventory } from './inventory';
 import type { ClueContent } from './puzzles/clue';
 import { codeMatches } from './puzzles/code-lock';
@@ -44,6 +45,8 @@ export class GameState {
   readonly room: RoomDef;
   readonly answers: RoomAnswers;
   readonly inventory = new Inventory(INVENTORY_CAPACITY);
+  /** Pistas vistas en la partida (cuentan en el resultado y en las marcas). */
+  readonly hints = new HintLedger();
   private readonly defs = new Map<string, InteractableDef>();
   private readonly puzzles = new Map<string, PuzzleDef>();
   private readonly open = new Set<string>();

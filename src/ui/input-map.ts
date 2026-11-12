@@ -34,6 +34,7 @@ const KEY_MAP: Readonly<Record<string, KeyIntent>> = {
   Escape: { kind: 'action', intent: 'back' },
   KeyM: { kind: 'action', intent: 'mute' },
   KeyC: { kind: 'action', intent: 'combine' },
+  KeyH: { kind: 'action', intent: 'hint' },
 };
 
 /** Teclas cuya acción por defecto del navegador se evita mientras se juega. */

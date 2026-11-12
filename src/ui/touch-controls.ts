@@ -11,6 +11,7 @@ export interface TouchCallbacks {
   onStick(x: number, z: number): void;
   onPause(): void;
   onInteract(): void;
+  onHint(): void;
 }
 
 export class TouchControls {
@@ -46,7 +47,15 @@ export class TouchControls {
     interact.addEventListener('click', () => {
       callbacks.onInteract();
     });
-    this.root = el('div', { className: 'touch-controls' }, [this.base, pause, interact]);
+    const hint = el('button', {
+      className: 'touch-btn touch-hint',
+      text: TEXTS.hintPanel.button,
+      attrs: { type: 'button' },
+    });
+    hint.addEventListener('click', () => {
+      callbacks.onHint();
+    });
+    this.root = el('div', { className: 'touch-controls' }, [this.base, pause, interact, hint]);
     setHidden(this.root, true);
     this.bindJoystick();
   }

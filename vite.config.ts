@@ -20,7 +20,7 @@ export default defineConfig({
     // Publica junto al juego el texto de licencia de cada dependencia incluida (Three.js, MIT).
     license: { fileName: 'third-party-licenses.md' },
     // Three.js es casi todo el peso del paquete; el tamaño se mide y se anota al publicar.
-    chunkSizeWarningLimit: 700,
+    chunkSizeWarningLimit: 760,
   },
   test: {
     include: ['tests/**/*.test.ts'],

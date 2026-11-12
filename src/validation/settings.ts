@@ -8,7 +8,7 @@ import { isPlainObject, readBoolean, readEnum, readNumber } from './guards';
  */
 export function parseSettings(value: unknown, defaults: Readonly<Settings>): Settings {
   if (!isPlainObject(value)) return { ...defaults };
-  const { sensitivity, fov } = SETTINGS_RANGES;
+  const { sensitivity, fov, volume } = SETTINGS_RANGES;
   return {
     sensitivity: readNumber(
       value,
@@ -21,6 +21,8 @@ export function parseSettings(value: unknown, defaults: Readonly<Settings>): Set
     fov: readNumber(value, 'fov', fov.min, fov.max, defaults.fov),
     quality: readEnum(value, 'quality', QUALITIES, defaults.quality),
     muted: readBoolean(value, 'muted', defaults.muted),
+    volume: readNumber(value, 'volume', volume.min, volume.max, defaults.volume),
     reduceMotion: readBoolean(value, 'reduceMotion', defaults.reduceMotion),
+    showTimer: readBoolean(value, 'showTimer', defaults.showTimer),
   };
 }

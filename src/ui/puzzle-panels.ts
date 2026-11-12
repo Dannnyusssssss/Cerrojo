@@ -21,7 +21,12 @@ export class PuzzlePanels {
   private items: readonly ItemDef[];
   private openPuzzle: string | null = null;
 
-  constructor(world: () => World, items: readonly ItemDef[], onClosed: () => void) {
+  constructor(
+    world: () => World,
+    items: readonly ItemDef[],
+    onClosed: () => void,
+    onWheelTurn: () => void,
+  ) {
     this.world = world;
     this.items = items;
     this.onClosed = onClosed;
@@ -32,6 +37,7 @@ export class PuzzlePanels {
       onTry: (values) => this.openPuzzle !== null && this.world().tryCode(this.openPuzzle, values),
       onClose: close,
       onSolved: close,
+      onTurn: onWheelTurn,
     });
     this.placement = new PlacementPanel({
       onPlace: (slot, item) => this.world().place(this.openPuzzle ?? '', slot, item),

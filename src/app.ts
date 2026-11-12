@@ -1,17 +1,18 @@
 /**
  * Controlador de la aplicación: une la lógica (game/), el render (render/game-view) y la
- * interfaz (ui/), y ejecuta el bucle principal. No contiene reglas de juego: las aplican
- * World, GameState y mode.ts.
+ * interfaz (ui/), ejecuta el bucle principal y decide qué pantalla se ve. No contiene reglas de
+ * juego: las aplican World, GameState y mode.ts. Las acciones dentro de la sala están en
+ * app-play.ts y el progreso entre salas (y el guardado) en app-progress.ts.
  */
 import { errorKindOf, logError, type ErrorKind } from './core/errors';
 import { InputState, type ActionIntent, type Axes } from './core/input';
 import { FixedStepLoop } from './core/loop';
-import { buildGameUi, type UiController } from './app-ui';
+import { ScreenFlow } from './app-screens';
+import { Progress } from './app-progress';
+import { buildGameUi, type GameUi, type UiController } from './app-ui';
+import { AudioEngine } from './audio/engine';
 import { INSPECT, LOOP, PLAYER, type Settings } from './data/config';
-import { ROOMS } from './data/rooms';
 import { TEXTS } from './data/texts';
-import type { Outcome } from './game/game-state';
-import type { RoomDef } from './game/room';
 import {
   INITIAL_MODE,
   isClockRunning,
@@ -22,6 +23,7 @@ import {
   type ModeState,
 } from './game/mode';
 import { turnPlayer } from './game/player';
+import type { RoomDef } from './game/room';
 import { generateAnswers } from './game/seeded';
 import { formatTime } from './game/timer';
 import { World } from './game/world';
@@ -29,20 +31,13 @@ import { GameView } from './render/game-view';
 import type { SaveStore } from './save/storage';
 import { DebugOverlay } from './ui/debug-overlay';
 import { el } from './ui/dom';
-import { combineMessage, focusTexts, itemName, outcomeMessage } from './ui/feedback';
-import type { Hud } from './ui/hud';
-import type { InputBinding } from './ui/input-binding';
-import type { InventoryBar } from './ui/inventory-bar';
-import type { Menus } from './ui/menus';
-import type { PuzzlePanels } from './ui/puzzle-panels';
-import type { TouchControls } from './ui/touch-controls';
 import type { DebugParams } from './validation/url-params';
 
 export interface BootOptions {
   seed: number;
   debug: DebugParams;
   store: SaveStore;
-  /** Crea una semilla nueva para «Repetir» (con crypto.getRandomValues). */
+  /** Crea una semilla nueva para cada partida (con crypto.getRandomValues). */
   newSeed: () => number;
 }
 
@@ -53,31 +48,22 @@ export class App implements UiController {
   private readonly root: HTMLElement;
   private readonly store: SaveStore;
   private readonly options: BootOptions;
+  /** Sala en juego, semilla y guardado de la partida y de las marcas. */
+  private readonly progress: Progress;
   private settings: Settings;
-  /** Partida con ayudas de depuración: no guardará marcas (desde el Hito 3). */
+  /** Partida con ayudas de depuración: no guarda marcas ni partida en curso. */
   readonly withAids: boolean;
   private readonly input = new InputState();
   private readonly loop = new FixedStepLoop(LOOP.stepSeconds, LOOP.maxFrameSeconds);
+  private readonly audio = new AudioEngine();
   private world!: World;
   private mode: ModeState = INITIAL_MODE;
-  /** Sala en juego. */
-  private room: RoomDef;
   private view!: GameView;
-  private hud!: Hud;
-  private menus!: Menus;
-  private touch!: TouchControls;
-  private inventoryBar!: InventoryBar;
-  private panels!: PuzzlePanels;
-  private binding!: InputBinding;
+  private ui!: GameUi;
+  private screens!: ScreenFlow;
   private debugOverlay: DebugOverlay | null = null;
-  private focusId: string | null = null;
-  private focusKey = '';
-  private touchMode = false;
-  private expectingUnlock = false;
   private saveWarned = false;
   private tutorialDone = false;
-  /** Esperando el segundo objeto para combinar. */
-  private combining = false;
   private finishTimer: number | undefined;
   private lastTime = 0;
   private stopped = false;
@@ -90,7 +76,12 @@ export class App implements UiController {
     this.store = options.store;
     this.settings = options.store.getSettings();
     this.withAids = options.debug.debug;
-    this.room = ROOMS[options.debug.room ?? 0] ?? (ROOMS[0] as RoomDef);
+    this.progress = new Progress(
+      options.store,
+      this.withAids,
+      options.debug.room ?? 0,
+      options.seed,
+    );
     if (options.debug.debug) this.debugOverlay = new DebugOverlay(options.seed);
   }
 
@@ -106,29 +97,55 @@ export class App implements UiController {
       return;
     }
     this.buildUi(stage);
-    this.newGame(this.options.seed);
+    // Sala de fondo del menú; no toca la partida guardada hasta que se elija jugar.
+    this.newGame(this.progress.seed);
     this.applySettings();
-    this.menus.setSettings(this.settings);
+    this.ui.menus.setSettings(this.settings);
+    if (this.progress.dropInvalidSaved()) this.ui.menus.setStartNotice(TEXTS.start.restoreFailed);
+    this.progress.refreshMenus(this.ui.menus);
+    // Al cerrar u ocultar la pestaña se guarda el tiempo de la partida en curso.
+    window.addEventListener('pagehide', () => {
+      this.saveNow();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.saveNow();
+    });
+    // El audio solo se crea tras un gesto del jugador (tecla, clic o toque).
+    const unlockAudio = (): void => {
+      this.audio.unlock();
+    };
+    window.addEventListener('keydown', unlockAudio, { capture: true });
+    window.addEventListener('pointerdown', unlockAudio, { capture: true });
     this.view.render(this.world.player, 1);
-    this.renderMode(null);
+    this.screens.render(this.mode, null, this.world);
     requestAnimationFrame(this.frame);
   }
 
   private buildUi(stage: HTMLElement): void {
-    const ui = buildGameUi(stage, this.view, this.input, this.room.items, this);
-    ({
-      hud: this.hud,
-      menus: this.menus,
-      touch: this.touch,
-      inventoryBar: this.inventoryBar,
-      panels: this.panels,
-      binding: this.binding,
-    } = ui);
+    const host = {
+      world: (): World => this.world,
+      room: (): RoomDef => this.room,
+      mode: (): Mode => this.mode.mode,
+      settings: (): Settings => this.settings,
+      dispatch: (event: ModeEvent): void => {
+        this.dispatch(event);
+      },
+      onExitOpened: (): void => {
+        this.scheduleFinish();
+      },
+    };
+    this.ui = buildGameUi(stage, this.view, this.input, this.room.items, this, host, this.audio);
+    this.screens = new ScreenFlow(this.root, this.ui, {
+      view: this.view,
+      input: this.input,
+      loop: this.loop,
+      play: this.ui.play,
+    });
     if (this.debugOverlay) stage.appendChild(this.debugOverlay.root);
     this.view.canvas.addEventListener('webglcontextlost', (event) => {
       event.preventDefault();
       this.dispatch('focusLost');
-      this.hud.showToast(TEXTS.errors.contextLost, 6000);
+      this.ui.hud.showToast(TEXTS.errors.contextLost, 6000);
     });
   }
 
@@ -144,38 +161,137 @@ export class App implements UiController {
     return this.world;
   }
 
-  /** «Jugar»: una partida ya empezada no se reutiliza, siempre se empieza limpio. */
-  play(): void {
-    if (this.world.timer.started) this.newGame(this.nextSeed());
+  private get room(): RoomDef {
+    return this.progress.room;
+  }
+
+  // ---------- Salas y partidas ----------
+
+  /** Sala elegida en la selección. Si hay una partida guardada, se pide confirmar antes. */
+  chooseRoom(index: number): void {
+    if (!this.progress.isUnlocked(index)) return;
+    const saved = this.progress.savedRoomName();
+    if (saved === null) {
+      this.startRoom(index);
+      return;
+    }
+    this.ui.menus.confirm(TEXTS.confirm.replaceSaved(saved), 'rooms', () => {
+      this.startRoom(index);
+    });
+  }
+
+  /** Empieza una sala desde cero (con una semilla nueva). */
+  private startRoom(index: number): void {
+    this.progress.begin(index, this.nextSeed());
+    this.newGame(this.progress.seed);
+    this.ui.menus.setStartNotice(null);
     this.dispatch('start');
   }
 
-  /** «Repetir»: partida nueva con otra semilla. */
-  replay(): void {
-    this.newGame(this.nextSeed());
+  /** «Continuar»: repite la partida guardada; si no es válida, se descarta y se avisa. */
+  continueGame(): void {
+    const restored = this.progress.restore();
+    if (restored === null) {
+      this.ui.menus.setStartNotice(TEXTS.start.restoreFailed);
+      this.progress.refreshMenus(this.ui.menus);
+      this.ui.menus.show('start');
+      return;
+    }
+    this.ui.menus.setStartNotice(null);
+    this.loadWorld(restored.world, restored.seed);
     this.dispatch('start');
+  }
+
+  /** «Repetir»: la misma sala con otra semilla. */
+  replay(): void {
+    this.startRoom(this.progress.roomIndex);
+  }
+
+  nextRoom(): void {
+    if (this.progress.hasNext()) this.startRoom(this.progress.roomIndex + 1);
+  }
+
+  /** Pausa: «Reiniciar sala» ya confirmado. */
+  restartRoom(): void {
+    this.dispatch('home');
+    this.startRoom(this.progress.roomIndex);
+  }
+
+  /** Vuelve a la selección de salas; la partida en curso queda guardada para continuarla. */
+  goRooms(): void {
+    this.saveNow();
+    this.progress.refreshMenus(this.ui.menus);
+    this.screens.showRoomsNext();
+    this.dispatch('home');
+  }
+
+  /** «Borrar datos guardados» ya confirmado (solo desde el inicio). */
+  clearData(): void {
+    this.progress.clearData();
+    this.progress.refreshMenus(this.ui.menus);
+    this.ui.menus.setStartNotice(TEXTS.settings.cleared);
+  }
+
+  private saveNow(): void {
+    const mode = this.mode.mode;
+    if (mode !== 'title' && mode !== 'finished') this.progress.saveNow(this.world);
   }
 
   private nextSeed(): number {
-    // Con una semilla fija de depuración, «Repetir» la conserva para poder reproducir.
+    // Con una semilla fija de depuración, cada partida la conserva para poder reproducir.
     return this.options.debug.seed ?? this.options.newSeed();
   }
 
-  /** Empieza una partida nueva en la sala: estado, jugador y vista desde cero. */
+  /** Partida nueva en la sala actual: estado, jugador y vista desde cero. */
   private newGame(seed: number): void {
+    this.loadWorld(new World(this.room, generateAnswers(this.room, seed)), seed);
+  }
+
+  /** Pone en juego un mundo (nuevo o recuperado) y reconstruye la vista de su sala. */
+  private loadWorld(world: World, seed: number): void {
     window.clearTimeout(this.finishTimer);
     this.finishTimer = undefined;
-    const answers = generateAnswers(this.room, seed);
-    this.world = new World(this.room, answers);
+    this.world = world;
     this.tutorialDone = false;
-    this.combining = false;
-    this.panels.reset(this.room.items);
-    this.inventoryBar.setItems(this.room.items);
-    this.focusId = null;
-    this.focusKey = '';
+    this.ui.play.reset();
+    this.ui.panels.reset(this.room.items);
+    this.ui.hintPanel.hide();
+    this.ui.inventoryBar.setItems(this.room.items);
     this.debugOverlay?.setSeed(seed);
-    this.view.load(this.room, answers, this.world.state, this.settings.quality);
+    this.view.load(this.room, world.state.answers, world.state, this.settings.quality);
+    this.updateAmbient();
   }
+
+  /** Ambiente de la sala mientras corre el reloj (no en menús ni en pausa). */
+  private updateAmbient(): void {
+    this.audio.setAmbient(isClockRunning(this.mode.mode) ? this.progress.roomIndex : null);
+  }
+
+  toggleMute(): void {
+    this.updateSettings({ ...this.settings, muted: !this.settings.muted });
+    this.ui.menus.setSettings(this.settings);
+    this.ui.hud.showToast(this.settings.muted ? TEXTS.hud.mutedOn : TEXTS.hud.mutedOff, 1500);
+  }
+
+  private scheduleFinish(): void {
+    if (this.finishTimer !== undefined) return;
+    this.finishTimer = window.setTimeout(() => {
+      this.finishTimer = undefined;
+      const newRecord = this.progress.finish(this.world);
+      this.ui.menus.setResult(
+        TEXTS.rooms[this.room.titleKey].result,
+        formatTime(this.world.timer.steps, LOOP.stepSeconds),
+        this.world.state.hints.used,
+        this.withAids,
+        newRecord,
+        this.progress.hasNext(),
+      );
+      this.progress.refreshMenus(this.ui.menus);
+      this.dispatch('finish');
+    }, FINISH_DELAY_MS);
+  }
+
+  // ---------- Bucle ----------
 
   private readonly frame = (now: number): void => {
     if (this.stopped) return;
@@ -217,9 +333,11 @@ export class App implements UiController {
         this.world.tickClock();
       }
       if (isWorldRunning(mode)) alpha = advance.alpha;
+      this.progress.maybeSave(this.world);
     }
+    for (const signal of this.world.drainSignals()) this.audio.play(signal.sound);
     if (mode === 'playing') {
-      this.updateFocus(this.world.pick(this.world.viewRayFromPlayer())?.id ?? null);
+      this.ui.play.updateFocus(this.world.pick(this.world.viewRayFromPlayer())?.id ?? null);
     }
     this.view.sync(this.world.state);
     this.updateHud();
@@ -227,135 +345,55 @@ export class App implements UiController {
     const calls = this.view.render(this.world.player, alpha);
     const p = this.world.player;
     this.debugOverlay?.setPose(p.x, p.z, p.yaw, p.pitch);
-    this.debugOverlay?.update(dt, calls);
+    this.debugOverlay?.update(dt, calls, this.view.resources());
   }
 
   private updateHud(): void {
     const state = this.world.state;
-    this.hud.setTime(formatTime(this.world.timer.steps, LOOP.stepSeconds));
-    if (this.combining && (this.mode.mode !== 'playing' || state.inventory.selectedItem === null)) {
-      this.combining = false;
-    }
-    this.inventoryBar.update(state.inventory.items, state.inventory.selected, this.combining);
+    this.ui.hud.setTime(formatTime(this.world.timer.steps, LOOP.stepSeconds));
+    this.ui.play.checkCombining();
+    this.ui.inventoryBar.update(
+      state.inventory.items,
+      state.inventory.selected,
+      this.ui.play.combining,
+    );
     const target = this.room.tutorialTarget;
     if (target !== undefined && state.isOpen(target)) this.tutorialDone = true;
     const showHint = target !== undefined && !this.tutorialDone && this.mode.mode === 'playing';
-    this.hud.setHint(showHint ? TEXTS.messages.tutorial : null);
+    this.ui.hud.setHint(showHint ? TEXTS.messages.tutorial : null);
   }
 
-  /** Resalta el objeto señalado y muestra su nombre con la acción posible. */
-  private updateFocus(id: string | null): void {
-    const texts = id === null ? null : focusTexts(this.world.state, id, this.room.items);
-    const key = `${id ?? ''}|${texts?.action ?? ''}`;
-    if (key === this.focusKey) return;
-    this.focusKey = key;
-    this.focusId = id;
-    this.view.highlight(id);
-    this.hud.setFocus(texts?.name ?? null, texts?.action ?? null);
-  }
+  // ---------- Entrada ----------
 
   onAction(action: ActionIntent): void {
     const mode = this.mode.mode;
-    const inventory = this.world.state.inventory;
     switch (action) {
       case 'interact':
-        if (mode === 'playing' && this.focusId !== null) this.interactWith(this.focusId);
+        if (mode === 'playing') this.ui.play.interactWithFocus();
         else if (mode === 'inspecting') this.endInspect();
         break;
       case 'pause':
         if (mode !== 'title' && mode !== 'finished') this.dispatch('togglePause');
         break;
       case 'combine':
-        if (mode === 'playing') this.toggleCombine();
+        if (mode === 'playing') this.ui.play.toggleCombine();
+        break;
+      case 'hint':
+        this.ui.play.requestHint();
         break;
       case 'back':
-        if (mode === 'playing' && this.combining) this.toggleCombine();
-        else if (mode === 'inspecting') this.endInspect();
-        else if (mode === 'panel') this.panels.close();
-        else if (mode === 'playing' && inventory.selectedItem !== null) inventory.clearSelection();
+        if (mode === 'playing' && this.ui.play.back()) break;
+        if (mode === 'inspecting') this.endInspect();
+        else if (mode === 'panel' && this.ui.hintPanel.isOpen) this.ui.hintPanel.close();
+        else if (mode === 'panel') this.ui.panels.close();
         else if (mode === 'playing') this.dispatch('pause');
-        else if (this.menus.screen === 'settings') this.menus.closeSettings();
+        else if (this.ui.menus.back()) break;
         else if (mode === 'paused') this.dispatch('resume');
         break;
       case 'mute':
-        this.updateSettings({ ...this.settings, muted: !this.settings.muted });
-        this.menus.setSettings(this.settings);
-        this.hud.showToast(this.settings.muted ? TEXTS.hud.mutedOn : TEXTS.hud.mutedOff, 1500);
+        this.toggleMute();
         break;
     }
-  }
-
-  selectSlot(index: number): void {
-    const inventory = this.world.state.inventory;
-    if (this.combining) {
-      this.combineWith(index);
-      return;
-    }
-    inventory.select(index);
-    const selected = inventory.selectedItem;
-    if (selected !== null) {
-      this.hud.showToast(TEXTS.messages.selected(itemName(this.room.items, selected)), 2500);
-    }
-  }
-
-  toggleCombine(): void {
-    const selected = this.world.state.inventory.selectedItem;
-    if (this.combining) {
-      this.combining = false;
-      this.hud.showToast(TEXTS.messages.combineCancelled, 1500);
-      return;
-    }
-    if (selected === null) {
-      this.hud.showToast(TEXTS.messages.combineNeedItem, 2500);
-      return;
-    }
-    this.combining = true;
-    this.hud.showToast(TEXTS.messages.combineChoose(itemName(this.room.items, selected)), 4000);
-  }
-
-  /** Combina el objeto en la mano con el de la casilla `index`. Si no encajan, no se pierde nada. */
-  private combineWith(index: number): void {
-    this.combining = false;
-    const inventory = this.world.state.inventory;
-    const first = inventory.selectedItem;
-    const second = inventory.items[index];
-    if (first === null || second === undefined) return;
-    const result = this.world.combine(first, second);
-    this.hud.showToast(combineMessage(result, this.room.items));
-  }
-
-  private interactWith(id: string): void {
-    this.respond(this.world.interact(id));
-  }
-
-  /** Respuesta visible a cada resultado de una acción. Nada se pierde al equivocarse. */
-  private respond(outcome: Outcome): void {
-    const message = outcomeMessage(outcome, this.room.items);
-    if (message !== null) this.hud.showToast(message);
-    if (outcome.kind === 'inspect') {
-      if (this.view.openInspect(outcome.id, this.settings.reduceMotion)) this.dispatch('inspect');
-    } else if (outcome.kind === 'panel') {
-      const puzzle = this.world.state.puzzle(outcome.puzzle);
-      if (!puzzle) return;
-      this.dispatch('openPanel');
-      // Cada panel lleva el foco a su primer control útil (la primera rueda, el primer bloque).
-      this.panels.open(puzzle, this.world.state.inventory.selectedItem);
-    } else if (outcome.kind === 'unlocked' && outcome.finished) {
-      this.scheduleFinish();
-    }
-  }
-
-  private scheduleFinish(): void {
-    if (this.finishTimer !== undefined) return;
-    this.finishTimer = window.setTimeout(() => {
-      this.finishTimer = undefined;
-      this.menus.setResult(
-        TEXTS.rooms[this.room.titleKey].result,
-        formatTime(this.world.timer.steps, LOOP.stepSeconds),
-        this.withAids,
-      );
-      this.dispatch('finish');
-    }, FINISH_DELAY_MS);
   }
 
   endInspect(): void {
@@ -366,81 +404,32 @@ export class App implements UiController {
   onTap(clientX: number, clientY: number): void {
     if (this.mode.mode !== 'playing') return;
     const hit = this.world.pick(this.world.rayToward(this.view.directionAt(clientX, clientY)));
-    if (hit) this.interactWith(hit.id);
+    if (hit) this.ui.play.interactWith(hit.id);
   }
 
   onPointerLockChange(locked: boolean): void {
-    if (locked) return;
-    if (this.expectingUnlock) {
-      this.expectingUnlock = false;
-      return;
-    }
     // Perder la captura durante la exploración (Esc del navegador) pausa el juego.
-    if (this.mode.mode === 'playing') this.dispatch('focusLost', { lockLost: true });
-  }
-
-  private releaseLock(): void {
-    if (this.binding.pointerLocked) {
-      this.expectingUnlock = true;
-      this.binding.releasePointerLock();
+    if (this.screens.lockLostByPlayer(locked) && this.mode.mode === 'playing') {
+      this.dispatch('focusLost', { lockLost: true });
     }
   }
 
   enableTouch(): void {
-    if (this.touchMode) return;
-    this.touchMode = true;
-    this.root.classList.add('touch-mode');
-    this.renderMode(null);
+    if (this.screens.enableTouch()) this.screens.render(this.mode, null, this.world);
   }
+
+  // ---------- Modos y pantallas ----------
 
   dispatch(event: ModeEvent, options: { lockLost?: boolean } = {}): void {
     const previous = this.mode;
     this.mode = nextMode(this.mode, event);
-    if (this.mode !== previous) this.renderMode(previous, options);
+    if (this.mode === previous) return;
+    if (this.mode.mode === 'paused') this.saveNow();
+    this.screens.render(this.mode, previous, this.world, options);
+    this.updateAmbient();
   }
 
-  /** Muestra la interfaz que corresponde al modo actual. */
-  private renderMode(previous: ModeState | null, options: { lockLost?: boolean } = {}): void {
-    const mode = this.mode.mode;
-    this.hud.setVisible(mode === 'playing' || mode === 'inspecting');
-    this.inventoryBar.setVisible(mode === 'playing');
-    this.touch.setVisible(this.touchMode && mode === 'playing');
-    this.hud.setInspecting(mode === 'inspecting');
-    if (mode !== 'panel') this.panels.hide();
-    if (mode !== 'playing') {
-      this.updateFocus(null);
-      this.input.releaseAll();
-    }
-    switch (mode) {
-      case 'title':
-        this.view.inspect.close(true);
-        this.menus.show('start');
-        break;
-      case 'finished':
-        this.releaseLock();
-        this.menus.show('result');
-        break;
-      case 'paused':
-        this.releaseLock();
-        if (this.mode.resumeTo === 'playing') this.view.inspect.close(true);
-        this.menus.show('pause', options);
-        break;
-      case 'inspecting':
-      case 'panel':
-        this.menus.show(null);
-        this.releaseLock();
-        break;
-      case 'playing':
-        this.menus.show(null);
-        this.loop.reset();
-        this.world.player.prevX = this.world.player.x;
-        this.world.player.prevZ = this.world.player.z;
-        // Se vuelve a pedir la captura con el gesto que reanudó (clic, Enter, E o Esc).
-        if (!this.touchMode && previous !== null) this.binding.requestPointerLock();
-        this.view.canvas.focus();
-        break;
-    }
-  }
+  // ---------- Ajustes y errores ----------
 
   updateSettings(values: Settings): void {
     const previousQuality = this.settings.quality;
@@ -448,13 +437,12 @@ export class App implements UiController {
     this.settings = this.store.getSettings();
     if (!saved && !this.saveWarned) {
       this.saveWarned = true;
-      this.hud.showToast(TEXTS.errors.saveUnavailable, 5000);
+      this.ui.hud.showToast(TEXTS.errors.saveUnavailable, 5000);
     }
     this.applySettings();
     // Cambiar la calidad reconstruye la sala (tamaño de texturas y sombras).
     if (this.settings.quality !== previousQuality) {
-      this.focusId = null;
-      this.focusKey = '';
+      this.ui.play.clearFocus();
       this.view.rebuild(this.world.state, this.settings.quality);
     }
   }
@@ -462,6 +450,8 @@ export class App implements UiController {
   private applySettings(): void {
     this.view.applySettings(this.settings.fov, this.settings.quality);
     this.root.classList.toggle('reduce-motion', this.settings.reduceMotion);
+    this.ui.hud.setTimerVisible(this.settings.showTimer);
+    this.audio.setVolume(this.settings.volume, this.settings.muted);
   }
 
   private showFatal(kind: ErrorKind): void {

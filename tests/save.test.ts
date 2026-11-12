@@ -39,7 +39,9 @@ const custom: Settings = {
   fov: 90,
   quality: 'high',
   muted: true,
+  volume: 0.3,
   reduceMotion: true,
+  showTimer: false,
 };
 
 describe('guardado de ajustes', () => {
@@ -105,7 +107,7 @@ describe('entradas hostiles en el guardado', () => {
     ['número', '42'],
     ['array', '[1,2,3]'],
     ['null JSON', 'null'],
-    ['otra versión', JSON.stringify({ version: 2, settings: custom })],
+    ['otra versión', JSON.stringify({ version: 3, settings: custom })],
     ['sin versión', JSON.stringify({ settings: custom })],
     ['versión como texto', JSON.stringify({ version: '1', settings: custom })],
     ['HTML', '<script>alert(1)</script>'],
@@ -153,7 +155,7 @@ describe('entradas hostiles en el guardado', () => {
     });
     const result = parseSave(raw, DEFAULT_SETTINGS);
     expect(result.settings).toEqual(custom);
-    expect(Object.keys(result)).toEqual(['version', 'settings']);
+    expect(Object.keys(result)).toEqual(['version', 'settings', 'records', 'current']);
     expect(Object.keys(result.settings).sort()).toEqual(Object.keys(DEFAULT_SETTINGS).sort());
   });
 

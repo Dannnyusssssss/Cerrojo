@@ -73,6 +73,11 @@ export class Hud {
     }
   }
 
+  /** El cronómetro se puede ocultar en los ajustes (sigue contando). */
+  setTimerVisible(visible: boolean): void {
+    setHidden(this.timer, !visible);
+  }
+
   /** Texto del cronómetro (solo toca el DOM si cambió). */
   setTime(text: string): void {
     if (this.timer.textContent !== text) this.timer.textContent = text;

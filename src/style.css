@@ -705,3 +705,72 @@ output {
   top: calc(max(16px, env(safe-area-inset-top)) + 72px);
   bottom: auto;
 }
+
+/* Panel de pistas y botón táctil de pista. */
+.hint-item {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-left: 4px solid var(--accent);
+  background: #2c2621;
+  text-align: left;
+}
+
+.hint-level {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.hint-item p {
+  margin: 0;
+}
+
+.touch-hint {
+  right: max(24px, env(safe-area-inset-right));
+  bottom: calc(max(48px, env(safe-area-inset-bottom)) + 72px);
+}
+
+/* ---------- Selección de salas, confirmación y resultado ---------- */
+.room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.room-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+}
+
+.room-name {
+  font-size: 1.1rem;
+}
+
+.room-detail {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.95rem;
+}
+
+/* Bloqueada: borde discontinuo y texto propio, no solo un color más apagado. */
+.room-locked,
+.room-locked:hover {
+  border-style: dashed;
+  border-color: var(--muted);
+  cursor: not-allowed;
+}
+
+.confirm-text {
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+}
+
+.result-record,
+.start-notice {
+  color: var(--accent);
+  font-weight: 700;
+}

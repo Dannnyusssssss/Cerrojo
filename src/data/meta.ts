@@ -3,5 +3,7 @@ export const GAME_TITLE = 'Cerrojo';
 export const GAME_SLUG = 'cerrojo';
 /** Prefijo de todas las claves de almacenamiento local (el portal lo usa para borrar datos). */
 export const STORAGE_PREFIX = `${GAME_SLUG}:`;
-export const SAVE_VERSION = 1;
-export const STORAGE_KEY = `${STORAGE_PREFIX}v${SAVE_VERSION}`;
+/** Versión del formato del guardado (va dentro del JSON; los antiguos se migran). */
+export const SAVE_VERSION = 2;
+/** Clave fija del guardado: no cambia con la versión del formato. */
+export const STORAGE_KEY = `${STORAGE_PREFIX}v1`;

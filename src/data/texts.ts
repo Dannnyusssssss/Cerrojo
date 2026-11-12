@@ -9,6 +9,8 @@ export const TEXTS = {
     'El juego guarda tus ajustes solo en este navegador.',
   start: {
     play: 'Jugar',
+    continueGame: (room: string): string => `Continuar: ${room}`,
+    restoreFailed: 'La partida guardada no se pudo recuperar. La sala empieza de nuevo.',
     settings: 'Ajustes',
     howToTitle: 'Cómo se juega',
     howTo: [
@@ -17,6 +19,7 @@ export const TEXTS = {
       'Táctil: joystick para caminar, arrastra para mirar, toca un objeto para interactuar.',
       'Inventario: teclas 1 a 8, clic o toque para tomar un objeto en la mano; Esc lo suelta.',
       'Combinar: con un objeto en la mano, pulsa C o «Combinar» y elige el otro objeto.',
+      'H: pide una pista (cuenta en el resultado).',
       'Esc o P: pausa.',
     ],
   },
@@ -24,6 +27,10 @@ export const TEXTS = {
     title: 'Pausa',
     resume: 'Continuar',
     settings: 'Ajustes',
+    restart: 'Reiniciar sala',
+    mute: 'Silenciar sonido (M)',
+    unmute: 'Activar sonido (M)',
+    rooms: 'Salas',
     clickToContinue: 'Haz clic para continuar',
   },
   settings: {
@@ -34,8 +41,12 @@ export const TEXTS = {
     quality: 'Calidad',
     qualityNames: { low: 'Baja', medium: 'Media', high: 'Alta' },
     muted: 'Silencio',
+    volume: 'Volumen',
+    showTimer: 'Mostrar cronómetro',
     reduceMotion: 'Reducir movimiento',
     back: 'Volver',
+    clearData: 'Borrar datos guardados',
+    cleared: 'Datos borrados.',
   },
   hud: {
     reticle: 'Retícula',
@@ -113,6 +124,23 @@ export const TEXTS = {
     study: { name: 'El estudio', result: '¡Has salido del estudio!' },
     workshop: { name: 'El taller', result: '¡Has salido del taller!' },
     observatory: { name: 'El observatorio', result: '¡Has salido del observatorio!' },
+  },
+  roomSelect: {
+    title: 'Salas',
+    back: 'Volver',
+    locked: 'Bloqueada: termina antes la sala anterior.',
+    noRecord: '—',
+    records: (clean: string, hinted: string): string =>
+      `Mejor tiempo sin pistas: ${clean} · con pistas: ${hinted}`,
+  },
+  confirm: {
+    yes: 'Sí',
+    no: 'No, volver',
+    restart: '¿Reiniciar la sala? Se perderá lo que llevas en esta partida.',
+    replaceSaved: (room: string): string =>
+      `Tienes una partida guardada en ${room}. Si empiezas otra, se perderá. ¿Empezar?`,
+    clearData:
+      '¿Borrar los datos guardados? Se perderán las marcas, las salas abiertas y la partida guardada. Los ajustes se conservan.',
   },
   shapes: {
     circle: 'círculo',
@@ -204,14 +232,133 @@ export const TEXTS = {
     almanacTitle: 'Almanaque',
     skyTitle: 'Constelación',
   },
+  hintPanel: {
+    title: 'Pista',
+    button: 'Pista',
+    buttonKey: 'Pista (H)',
+    level: (n: number, total: number): string => `Pista ${n} de ${total}`,
+    ask: (n: number, total: number): string =>
+      `¿Ver la pista ${n} de ${total}? Contará en el resultado como pista usada.`,
+    reveal: (n: number): string => `Ver la pista ${n}`,
+    allSeen: 'Ya viste las tres pistas de este paso. Puedes releerlas sin que cuenten.',
+    none: 'No queda nada por resolver aquí.',
+    close: 'Cerrar',
+  },
+  /** Solución (tercer nivel), armada con las respuestas de la partida. */
+  hintSolution: {
+    keyLock: (item: string, target: string): string =>
+      `Toma «${item}» en la mano y úsalo en «${target}».`,
+    code: (target: string, digits: string): string => `La combinación de «${target}» es ${digits}.`,
+    dial: (target: string, positions: string): string =>
+      `En «${target}», pon las agujas así, de izquierda a derecha: ${positions}.`,
+    symbols: (target: string, shapes: string): string =>
+      `En «${target}», pon las formas así, de izquierda a derecha: ${shapes}.`,
+    sequence: (target: string, order: string): string =>
+      `En «${target}», acciona los interruptores en este orden: ${order}.`,
+    placement: (target: string, slots: string): string =>
+      `En «${target}», cada pieza va en el hueco de su misma forma: ${slots}.`,
+    combine: (a: string, b: string): string =>
+      `Combina «${a}» con «${b}»: toma uno en la mano, pulsa C (o «Combinar») y elige el otro.`,
+    switchItem: (n: number, shape: string): string => `${n} (${shape})`,
+    slotItem: (n: number, piece: string): string => `hueco ${n}, ${piece}`,
+  },
+  /** Orientación y pista concreta de cada puzzle, por sala. El tercer nivel es la solución. */
+  hints: {
+    study: {
+      'p-cabinet': [
+        'El armario está cerrado con llave. ¿Has mirado bien el escritorio?',
+        'Abre el cajón del escritorio: dentro hay una llave pequeña. Tómala en la mano y úsala en el armario.',
+      ],
+      'p-panel': [
+        'Los bloques del armario tienen formas. ¿Dónde podrían encajar?',
+        'El panel con huecos tiene siluetas: coloca cada bloque en el hueco de su misma forma.',
+      ],
+      'p-chest': [
+        'El cofre pide cuatro números. Algunos objetos esconden formas con números.',
+        'Cada forma vale un número: búscalo en el libro, el reloj, el cuadro y la postal. La tarjeta que salió del panel dice en qué orden van las formas.',
+      ],
+      'p-exit': [
+        'La puerta necesita su llave. ¿Qué te queda por abrir?',
+        'La llave de la puerta está dentro del cofre. Tómala en la mano y úsala en la puerta.',
+      ],
+    },
+    workshop: {
+      'p-toolbox': [
+        'La caja de herramientas está cerrada con llave. Busca en el banco.',
+        'En el cajón del banco hay una llave pequeña. Úsala en la caja de herramientas.',
+      ],
+      'p-screwdriver': [
+        'Un mango solo no sirve de mucho. ¿Qué le falta?',
+        'Junta el mango con la punta de destornillador que hay en el taller.',
+      ],
+      'p-fusebox': [
+        'La tapa del cuadro eléctrico está atornillada.',
+        'Con el destornillador en la mano, úsalo en el cuadro eléctrico.',
+      ],
+      'p-switches': [
+        'Los interruptores llevan formas. Algún papel del taller dice en qué orden accionarlos.',
+        'El esquema de la pared muestra las formas en orden: acciona los interruptores en ese orden.',
+      ],
+      'p-safe': [
+        'La caja fuerte tiene tres diales. Algo se encendió al accionar los interruptores.',
+        'La caja de luz muestra adónde apunta cada aguja. Copia esas posiciones en los diales, de izquierda a derecha.',
+      ],
+      'p-crank': [
+        'El portón se abre con una manivela, pero está en dos partes.',
+        'Combina el brazo de manivela de la caja de herramientas con la empuñadura de la caja fuerte.',
+      ],
+      'p-exit': [
+        'Al portón le falta algo con lo que girarlo.',
+        'Toma la manivela en la mano y úsala en el portón.',
+      ],
+    },
+    observatory: {
+      'p-mapcase': [
+        'El tubo de mapas pide tres números. Hay formas con números repartidas por la sala.',
+        'El libro, el globo terráqueo y la lámina de estrellas dan el número de cada forma. La nota dice en qué orden van.',
+      ],
+      'p-vitrine': [
+        'La vitrina se abre con formas, no con números. Busca un papel con formas en orden.',
+        'La carta estelar, dentro del tubo de mapas, muestra las cuatro formas en orden: ponlas en las ruedas de la vitrina.',
+      ],
+      'p-eyepiece': [
+        'Una lente y un tubo… ¿no encajarían juntos?',
+        'Combina la lente de la vitrina con el tubo del ocular del cajón del escritorio.',
+      ],
+      'p-dome': [
+        'La puerta de la cúpula tiene tres diales. Busca algo que diga cómo calibrarlos.',
+        'El almanaque, dentro del tubo de mapas, muestra la posición de cada aguja. Cópialas en los diales de la puerta.',
+      ],
+      'p-telescope': [
+        'Al telescopio le falta una pieza para poder mirar por él.',
+        'Usa el ocular en el telescopio. Después mira el visor.',
+      ],
+      'p-console': [
+        'La consola tiene cinco interruptores con formas. Lo que se ve por el telescopio puede indicar el orden.',
+        'El visor del telescopio muestra formas en orden: acciona los interruptores de la consola en ese orden.',
+      ],
+      'p-orrery': [
+        'El planetario tiene huecos con formas. Hay esferas marcadas por la sala.',
+        'Reúne las tres esferas (estrella, hexágono y cruz) y coloca cada una en el hueco de su forma.',
+      ],
+      'p-exit': [
+        'La salida de la cúpula necesita una llave.',
+        'La llave de la cúpula aparece al completar el planetario. Úsala en la puerta.',
+      ],
+    },
+  },
   timer: {
     label: 'Tiempo',
   },
   result: {
     time: (t: string): string => `Tiempo: ${t}`,
     withAids: 'Partida con ayudas de depuración: no cuenta para las marcas.',
+    hints: (n: number): string => (n === 0 ? 'Sin pistas.' : `Pistas usadas: ${n}.`),
     replay: 'Repetir',
     home: 'Inicio',
+    next: 'Siguiente sala',
+    rooms: 'Salas',
+    newRecord: '¡Nueva marca!',
   },
   errors: {
     generic: 'Algo salió mal. Recarga la página para seguir jugando.',
@@ -223,6 +370,8 @@ export const TEXTS = {
   debug: {
     fps: 'FPS',
     drawCalls: 'Llamadas de dibujo',
+    memory: (geometries: number, textures: number): string =>
+      `Geometrías: ${geometries} · texturas: ${textures}`,
     seed: 'Semilla',
     withAids: 'Con ayudas de depuración',
     pose: (x: string, z: string, yaw: string, pitch: string): string =>

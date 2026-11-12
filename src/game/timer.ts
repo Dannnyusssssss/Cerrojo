@@ -30,6 +30,13 @@ export class Timer {
     if (this.startedFlag && !this.stoppedFlag) this.stepCount += 1;
   }
 
+  /** Continúa una partida guardada con los pasos que ya llevaba. */
+  resume(steps: number): void {
+    this.stepCount = Math.max(0, Math.floor(steps));
+    this.startedFlag = this.stepCount > 0;
+    this.stoppedFlag = false;
+  }
+
   stop(): void {
     this.stoppedFlag = true;
   }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../src/data/config';
 import { initialSettings } from '../src/game/settings';
 import { SaveStore, type StorageLike } from '../src/save/storage';
+import { parseSettings } from '../src/validation/settings';
 
 const desktop = { reducedMotion: false, coarsePointer: false, smallScreen: false };
 
@@ -38,5 +39,18 @@ describe('ajustes iniciales según el entorno', () => {
     expect(new SaveStore(storage, initialSettings(env)).load().settings).toEqual(
       initialSettings(env),
     );
+  });
+});
+
+describe('ajustes de sonido y cronómetro', () => {
+  it('volumen dentro de 0 a 1 y cronómetro visible como valor por defecto', () => {
+    expect(parseSettings({ volume: 0.3, showTimer: false }, DEFAULT_SETTINGS)).toMatchObject({
+      volume: 0.3,
+      showTimer: false,
+    });
+    for (const volume of [-0.1, 1.5, '0.5', null, Number.NaN]) {
+      expect(parseSettings({ volume }, DEFAULT_SETTINGS).volume).toBe(DEFAULT_SETTINGS.volume);
+    }
+    expect(parseSettings({ showTimer: 'no' }, DEFAULT_SETTINGS).showTimer).toBe(true);
   });
 });

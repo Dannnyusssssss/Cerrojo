@@ -9,7 +9,7 @@ export type HeldIntent =
   'forward' | 'back' | 'left' | 'right' | 'turnLeft' | 'turnRight' | 'turnUp' | 'turnDown';
 
 /** Intenciones de un solo disparo. */
-export type ActionIntent = 'interact' | 'pause' | 'back' | 'mute' | 'combine';
+export type ActionIntent = 'interact' | 'pause' | 'back' | 'mute' | 'combine' | 'hint';
 
 export interface Axes {
   /** Lateral: -1 izquierda, 1 derecha. */

@@ -21,6 +21,17 @@ import {
   type RoomDef,
 } from './room';
 import type { RoomAnswers } from './seeded';
+import { SessionLog } from './session';
+import {
+  codeSignal,
+  combineSignal,
+  outcomeSignal,
+  placeSignal,
+  pressSignal,
+  STEP_DISTANCE,
+  STEP_SIGNAL,
+  type Signal,
+} from './signals';
 import { Timer } from './timer';
 
 const TUNING = { radius: PLAYER.radius, walkSpeed: PLAYER.walkSpeed, maxPitch: PLAYER.maxPitch };
@@ -30,6 +41,8 @@ export class World {
   readonly state: GameState;
   readonly player: PlayerState;
   readonly timer = new Timer();
+  /** Acciones acertadas de la partida (para guardarla y poder continuarla). */
+  readonly log: SessionLog;
   /** Obstáculos fijos (paredes, tabiques y muebles). */
   private readonly fixedColliders: Rect[];
   /** Objetos que bloquean el paso mientras están cerrados (puertas entre zonas). */
@@ -41,11 +54,24 @@ export class World {
   private targets: PickTarget[] = [];
   private targetsVersion = -1;
   private readonly move: Axes = { x: 0, z: 0 };
+  /** Señales pendientes de reproducir (sonido); las recoge el controlador cada frame. */
+  private readonly signals: Signal[] = [];
+  /** Distancia caminada desde el último paso. */
+  private stride = 0;
   private readonly viewRay: Ray = { origin: { x: 0, y: 0, z: 0 }, dir: { x: 0, y: 0, z: -1 } };
 
-  constructor(room: RoomDef, answers: RoomAnswers) {
+  /**
+   * Partida nueva, o restaurada si se pasa un estado ya repetido (`restored`) con su registro.
+   */
+  constructor(
+    room: RoomDef,
+    answers: RoomAnswers,
+    restored?: { state: GameState; log: SessionLog; steps: number },
+  ) {
     this.room = room;
-    this.state = new GameState(room, answers);
+    this.state = restored?.state ?? new GameState(room, answers);
+    this.log = restored?.log ?? new SessionLog();
+    if (restored) this.timer.resume(restored.steps);
     this.player = createPlayer(room.spawn);
     this.fixedColliders = roomColliders(room);
     this.blockers = room.interactables.filter((d) => d.blocks === true);
@@ -60,6 +86,21 @@ export class World {
     if (this.move.x !== 0 || this.move.z !== 0) this.timer.start();
     this.refreshColliders();
     stepPlayer(this.player, this.move, dt, this.colliders, TUNING);
+    this.stride += Math.hypot(this.player.x - this.player.prevX, this.player.z - this.player.prevZ);
+    if (this.stride >= STEP_DISTANCE) {
+      this.stride -= STEP_DISTANCE;
+      this.emit(STEP_SIGNAL);
+    }
+  }
+
+  /** Entrega y vacía las señales pendientes. */
+  drainSignals(): Signal[] {
+    return this.signals.splice(0, this.signals.length);
+  }
+
+  private emit(signal: Signal): void {
+    // Con un tope, por si nadie las recoge (pruebas): nunca crece sin límite.
+    if (signal.sound !== null && this.signals.length < 32) this.signals.push(signal);
   }
 
   /** Un paso de reloj (lo llama el bucle en los modos en que el cronómetro avanza). */
@@ -89,14 +130,36 @@ export class World {
 
   interact(id: string): Outcome {
     this.timer.start();
+    const clue = this.state.def(id)?.clue;
+    const newClue = clue !== undefined && !this.state.hasSeen(clue);
     const outcome = this.state.interact(id, this.state.inventory.selectedItem);
+    switch (outcome.kind) {
+      case 'inspect':
+        if (newClue) this.log.add({ k: 'look', id });
+        break;
+      case 'toggled':
+        if (outcome.open) this.log.add({ k: 'open', id });
+        break;
+      case 'picked':
+        this.log.add({ k: 'take', id });
+        break;
+      case 'unlocked':
+        this.log.add({ k: 'use', id, item: outcome.item });
+        break;
+      default:
+        break;
+    }
+    this.emit(outcomeSignal(outcome));
     this.afterChange();
     return outcome;
   }
 
   tryCode(puzzle: string, code: readonly number[]): boolean {
     this.timer.start();
+    const already = this.state.isSolved(puzzle);
     const ok = this.state.tryCode(puzzle, code);
+    if (ok && !already) this.log.add({ k: 'code', puzzle, values: [...code] });
+    if (!already) this.emit(codeSignal(ok));
     this.afterChange();
     return ok;
   }
@@ -104,13 +167,20 @@ export class World {
   place(puzzle: string, slot: number, item: string): PlaceResult {
     this.timer.start();
     const result = this.state.place(puzzle, slot, item);
+    if (result === 'placed') this.log.add({ k: 'place', puzzle, slot, item });
+    this.emit(placeSignal(result, this.state.isSolved(puzzle)));
     this.afterChange();
     return result;
   }
 
   pressSwitch(puzzle: string, index: number): PressResult {
     this.timer.start();
+    const already = this.state.isSolved(puzzle);
     const result = this.state.pressSwitch(puzzle, index);
+    if (result === 'solved' && !already) {
+      this.log.add({ k: 'switches', puzzle, order: [...this.state.pressedSwitches(puzzle)] });
+    }
+    if (!already) this.emit(pressSignal(result));
     this.afterChange();
     return result;
   }
@@ -118,8 +188,17 @@ export class World {
   combine(a: string, b: string): CombineResult {
     this.timer.start();
     const result = this.state.combine(a, b);
+    if (result.kind === 'combined') this.log.add({ k: 'combine', a, b });
+    this.emit(combineSignal(result));
     this.afterChange();
     return result;
+  }
+
+  /** Muestra y cuenta el siguiente nivel de pista de un puzzle. */
+  revealHint(puzzle: string): number | null {
+    const level = this.state.hints.reveal(puzzle);
+    if (level !== null) this.log.add({ k: 'hint', puzzle });
+    return level;
   }
 
   private afterChange(): void {
