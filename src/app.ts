@@ -8,9 +8,10 @@ import { InputState, type ActionIntent, type Axes } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { buildGameUi, type UiController } from './app-ui';
 import { INSPECT, LOOP, PLAYER, type Settings } from './data/config';
-import { ROOM_1 } from './data/rooms/room-1';
+import { ROOMS } from './data/rooms';
 import { TEXTS } from './data/texts';
 import type { Outcome } from './game/game-state';
+import type { RoomDef } from './game/room';
 import {
   INITIAL_MODE,
   isClockRunning,
@@ -28,7 +29,7 @@ import { GameView } from './render/game-view';
 import type { SaveStore } from './save/storage';
 import { DebugOverlay } from './ui/debug-overlay';
 import { el } from './ui/dom';
-import { focusTexts, itemName, outcomeMessage } from './ui/feedback';
+import { combineMessage, focusTexts, itemName, outcomeMessage } from './ui/feedback';
 import type { Hud } from './ui/hud';
 import type { InputBinding } from './ui/input-binding';
 import type { InventoryBar } from './ui/inventory-bar';
@@ -48,8 +49,6 @@ export interface BootOptions {
 /** Espera entre abrir la puerta de salida y mostrar el resultado, para ver cómo se abre. */
 const FINISH_DELAY_MS = 1200;
 
-const ROOM = ROOM_1;
-
 export class App implements UiController {
   private readonly root: HTMLElement;
   private readonly store: SaveStore;
@@ -61,6 +60,8 @@ export class App implements UiController {
   private readonly loop = new FixedStepLoop(LOOP.stepSeconds, LOOP.maxFrameSeconds);
   private world!: World;
   private mode: ModeState = INITIAL_MODE;
+  /** Sala en juego. */
+  private room: RoomDef;
   private view!: GameView;
   private hud!: Hud;
   private menus!: Menus;
@@ -75,6 +76,8 @@ export class App implements UiController {
   private expectingUnlock = false;
   private saveWarned = false;
   private tutorialDone = false;
+  /** Esperando el segundo objeto para combinar. */
+  private combining = false;
   private finishTimer: number | undefined;
   private lastTime = 0;
   private stopped = false;
@@ -87,6 +90,7 @@ export class App implements UiController {
     this.store = options.store;
     this.settings = options.store.getSettings();
     this.withAids = options.debug.debug;
+    this.room = ROOMS[options.debug.room ?? 0] ?? (ROOMS[0] as RoomDef);
     if (options.debug.debug) this.debugOverlay = new DebugOverlay(options.seed);
   }
 
@@ -111,7 +115,7 @@ export class App implements UiController {
   }
 
   private buildUi(stage: HTMLElement): void {
-    const ui = buildGameUi(stage, this.view, this.input, ROOM.items, this);
+    const ui = buildGameUi(stage, this.view, this.input, this.room.items, this);
     ({
       hud: this.hud,
       menus: this.menus,
@@ -161,13 +165,16 @@ export class App implements UiController {
   private newGame(seed: number): void {
     window.clearTimeout(this.finishTimer);
     this.finishTimer = undefined;
-    const answers = generateAnswers(ROOM, seed);
-    this.world = new World(ROOM, answers);
+    const answers = generateAnswers(this.room, seed);
+    this.world = new World(this.room, answers);
     this.tutorialDone = false;
+    this.combining = false;
+    this.panels.reset(this.room.items);
+    this.inventoryBar.setItems(this.room.items);
     this.focusId = null;
     this.focusKey = '';
     this.debugOverlay?.setSeed(seed);
-    this.view.load(ROOM, answers, this.world.state, this.settings.quality);
+    this.view.load(this.room, answers, this.world.state, this.settings.quality);
   }
 
   private readonly frame = (now: number): void => {
@@ -226,8 +233,11 @@ export class App implements UiController {
   private updateHud(): void {
     const state = this.world.state;
     this.hud.setTime(formatTime(this.world.timer.steps, LOOP.stepSeconds));
-    this.inventoryBar.update(state.inventory.items, state.inventory.selected);
-    const target = ROOM.tutorialTarget;
+    if (this.combining && (this.mode.mode !== 'playing' || state.inventory.selectedItem === null)) {
+      this.combining = false;
+    }
+    this.inventoryBar.update(state.inventory.items, state.inventory.selected, this.combining);
+    const target = this.room.tutorialTarget;
     if (target !== undefined && state.isOpen(target)) this.tutorialDone = true;
     const showHint = target !== undefined && !this.tutorialDone && this.mode.mode === 'playing';
     this.hud.setHint(showHint ? TEXTS.messages.tutorial : null);
@@ -235,7 +245,7 @@ export class App implements UiController {
 
   /** Resalta el objeto señalado y muestra su nombre con la acción posible. */
   private updateFocus(id: string | null): void {
-    const texts = id === null ? null : focusTexts(this.world.state, id, ROOM.items);
+    const texts = id === null ? null : focusTexts(this.world.state, id, this.room.items);
     const key = `${id ?? ''}|${texts?.action ?? ''}`;
     if (key === this.focusKey) return;
     this.focusKey = key;
@@ -255,8 +265,12 @@ export class App implements UiController {
       case 'pause':
         if (mode !== 'title' && mode !== 'finished') this.dispatch('togglePause');
         break;
+      case 'combine':
+        if (mode === 'playing') this.toggleCombine();
+        break;
       case 'back':
-        if (mode === 'inspecting') this.endInspect();
+        if (mode === 'playing' && this.combining) this.toggleCombine();
+        else if (mode === 'inspecting') this.endInspect();
         else if (mode === 'panel') this.panels.close();
         else if (mode === 'playing' && inventory.selectedItem !== null) inventory.clearSelection();
         else if (mode === 'playing') this.dispatch('pause');
@@ -273,11 +287,41 @@ export class App implements UiController {
 
   selectSlot(index: number): void {
     const inventory = this.world.state.inventory;
+    if (this.combining) {
+      this.combineWith(index);
+      return;
+    }
     inventory.select(index);
     const selected = inventory.selectedItem;
     if (selected !== null) {
-      this.hud.showToast(TEXTS.messages.selected(itemName(ROOM.items, selected)), 2500);
+      this.hud.showToast(TEXTS.messages.selected(itemName(this.room.items, selected)), 2500);
     }
+  }
+
+  toggleCombine(): void {
+    const selected = this.world.state.inventory.selectedItem;
+    if (this.combining) {
+      this.combining = false;
+      this.hud.showToast(TEXTS.messages.combineCancelled, 1500);
+      return;
+    }
+    if (selected === null) {
+      this.hud.showToast(TEXTS.messages.combineNeedItem, 2500);
+      return;
+    }
+    this.combining = true;
+    this.hud.showToast(TEXTS.messages.combineChoose(itemName(this.room.items, selected)), 4000);
+  }
+
+  /** Combina el objeto en la mano con el de la casilla `index`. Si no encajan, no se pierde nada. */
+  private combineWith(index: number): void {
+    this.combining = false;
+    const inventory = this.world.state.inventory;
+    const first = inventory.selectedItem;
+    const second = inventory.items[index];
+    if (first === null || second === undefined) return;
+    const result = this.world.combine(first, second);
+    this.hud.showToast(combineMessage(result, this.room.items));
   }
 
   private interactWith(id: string): void {
@@ -286,7 +330,7 @@ export class App implements UiController {
 
   /** Respuesta visible a cada resultado de una acción. Nada se pierde al equivocarse. */
   private respond(outcome: Outcome): void {
-    const message = outcomeMessage(outcome, ROOM.items);
+    const message = outcomeMessage(outcome, this.room.items);
     if (message !== null) this.hud.showToast(message);
     if (outcome.kind === 'inspect') {
       if (this.view.openInspect(outcome.id, this.settings.reduceMotion)) this.dispatch('inspect');
@@ -305,7 +349,11 @@ export class App implements UiController {
     if (this.finishTimer !== undefined) return;
     this.finishTimer = window.setTimeout(() => {
       this.finishTimer = undefined;
-      this.menus.setResult(formatTime(this.world.timer.steps, LOOP.stepSeconds), this.withAids);
+      this.menus.setResult(
+        TEXTS.rooms[this.room.titleKey].result,
+        formatTime(this.world.timer.steps, LOOP.stepSeconds),
+        this.withAids,
+      );
       this.dispatch('finish');
     }, FINISH_DELAY_MS);
   }

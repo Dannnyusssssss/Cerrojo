@@ -16,6 +16,7 @@ export const TEXTS = {
       'Solo teclado: flechas para girar, WASD para caminar, E para interactuar.',
       'Táctil: joystick para caminar, arrastra para mirar, toca un objeto para interactuar.',
       'Inventario: teclas 1 a 8, clic o toque para tomar un objeto en la mano; Esc lo suelta.',
+      'Combinar: con un objeto en la mano, pulsa C o «Combinar» y elige el otro objeto.',
       'Esc o P: pausa.',
     ],
   },
@@ -52,6 +53,7 @@ export const TEXTS = {
     use: 'Usar',
     tryCode: 'Probar combinación',
     place: 'Colocar piezas',
+    operate: 'Accionar',
   },
   inspect: {
     back: 'Volver',
@@ -73,26 +75,57 @@ export const TEXTS = {
     blockSquare: 'Bloque cuadrado',
     postcard: 'Postal',
     orderCard: 'Tarjeta',
+    benchDrawer: 'Cajón del banco',
+    toolbox: 'Caja de herramientas',
+    handle: 'Mango',
+    bit: 'Punta de destornillador',
+    screwdriver: 'Destornillador',
+    fuseBox: 'Cuadro eléctrico',
+    switchboard: 'Interruptores',
+    diagram: 'Esquema',
+    lightBox: 'Caja de luz',
+    safe: 'Caja fuerte',
+    crankArm: 'Brazo de manivela',
+    crankGrip: 'Empuñadura',
+    crank: 'Manivela',
+    gate: 'Portón',
+  },
+  rooms: {
+    study: { name: 'El estudio', result: '¡Has salido del estudio!' },
+    workshop: { name: 'El taller', result: '¡Has salido del taller!' },
+    observatory: { name: 'El observatorio', result: '¡Has salido del observatorio!' },
   },
   shapes: {
     circle: 'círculo',
     triangle: 'triángulo',
     square: 'cuadrado',
     diamond: 'rombo',
+    star: 'estrella',
+    hexagon: 'hexágono',
+    cross: 'cruz',
+    arrow: 'flecha',
   },
   messages: {
     locked: 'Está cerrado con llave.',
     wrongItem: 'Eso no sirve aquí.',
     inventoryFull: 'No puedes llevar más objetos.',
     picked: (name: string): string => `Has recogido: ${name}.`,
-    unlocked: 'La llave encaja. ¡Se abrió!',
+    unlocked: 'Encaja. ¡Se abrió!',
     tutorial: 'Acércate al escritorio, mira el cajón y pulsa E (o tócalo) para abrirlo.',
     selected: (name: string): string =>
       `Llevas en la mano: ${name}. Úsalo sobre lo que quieras abrir.`,
+    combineNeedItem: 'Primero toma un objeto en la mano (teclas 1 a 8).',
+    combineChoose: (name: string): string =>
+      `¿Con qué quieres combinar: ${name}? Elige otro objeto (1 a 8). Esc cancela.`,
+    combined: (name: string): string => `Encajan. Ahora tienes: ${name}.`,
+    combineNoMatch: 'Esos dos objetos no encajan entre sí.',
+    combineCancelled: 'Combinación cancelada.',
   },
   inventory: {
     label: 'Inventario',
     slot: (n: number, name: string): string => `${n}: ${name}`,
+    combine: 'Combinar (C)',
+    combining: 'Elige el otro…',
   },
   codePanel: {
     title: 'Cerradura de combinación',
@@ -104,6 +137,33 @@ export const TEXTS = {
     close: 'Cerrar',
     wrong: 'No se abre. Prueba otra combinación.',
     right: '¡Se abrió!',
+  },
+  dialPanel: {
+    title: 'Diales',
+    help: 'Flechas arriba y abajo para girar la aguja, izquierda y derecha para cambiar de dial, Enter para probar. La marca larga es la posición 1.',
+    wheel: (n: number): string => `Dial ${n}`,
+    up: (n: number): string => `Girar el dial ${n} en el sentido del reloj`,
+    down: (n: number): string => `Girar el dial ${n} al revés`,
+    position: (n: number): string => `posición ${n}`,
+    wrong: 'No se abre. Revisa la posición de cada aguja.',
+  },
+  symbolPanel: {
+    title: 'Cerradura de símbolos',
+    help: 'Flechas arriba y abajo para cambiar la forma, izquierda y derecha para cambiar de rueda, Enter para probar.',
+    wheel: (n: number): string => `Rueda ${n}`,
+    up: (n: number): string => `Siguiente forma en la rueda ${n}`,
+    down: (n: number): string => `Forma anterior en la rueda ${n}`,
+    wrong: 'No se abre. Prueba otras formas.',
+  },
+  sequencePanel: {
+    title: 'Interruptores',
+    help: 'Acciona los interruptores en el orden correcto. Si te equivocas, las luces se apagan y puedes empezar de nuevo.',
+    switchLabel: (n: number, shape: string): string => `Interruptor ${n}, ${shape}`,
+    lights: (lit: number, total: number): string => `Luces encendidas: ${lit} de ${total}`,
+    right: 'Clic. Se enciende una luz.',
+    wrong: 'Las luces se apagan. Empieza de nuevo.',
+    solved: '¡Todas las luces encendidas!',
+    close: 'Cerrar',
   },
   placementPanel: {
     title: 'Panel con huecos',
@@ -120,12 +180,13 @@ export const TEXTS = {
   },
   clues: {
     orderTitle: 'Orden',
+    switchOrderTitle: 'Orden de encendido',
+    dialsTitle: 'Calibración',
   },
   timer: {
     label: 'Tiempo',
   },
   result: {
-    title: '¡Has salido del estudio!',
     time: (t: string): string => `Tiempo: ${t}`,
     withAids: 'Partida con ayudas de depuración: no cuenta para las marcas.',
     replay: 'Repetir',
@@ -149,3 +210,4 @@ export const TEXTS = {
 } as const;
 
 export type ObjectNameKey = keyof typeof TEXTS.objects;
+export type RoomTitleKey = keyof typeof TEXTS.rooms;

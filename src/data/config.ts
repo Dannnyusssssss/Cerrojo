@@ -94,4 +94,5 @@ export const INPUT_LIMITS = {
 export const DEBUG_PARAMS = {
   debug: 'debug',
   seed: 'seed',
+  room: 'room',
 } as const;

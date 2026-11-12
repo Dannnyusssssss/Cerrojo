@@ -24,6 +24,8 @@ export interface UiController {
   onAction(action: ActionIntent): void;
   onTap(clientX: number, clientY: number): void;
   selectSlot(index: number): void;
+  /** «Combinar»: empieza o cancela la elección del segundo objeto. */
+  toggleCombine(): void;
   endInspect(): void;
   play(): void;
   replay(): void;
@@ -79,9 +81,15 @@ export function buildGameUi(
       app.onAction('interact');
     },
   });
-  const inventoryBar = new InventoryBar(items, (index) => {
-    app.selectSlot(index);
-  });
+  const inventoryBar = new InventoryBar(
+    items,
+    (index) => {
+      app.selectSlot(index);
+    },
+    () => {
+      app.toggleCombine();
+    },
+  );
   const panels = new PuzzlePanels(
     () => app.currentWorld,
     items,

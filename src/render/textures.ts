@@ -112,6 +112,32 @@ export class TextureFactory {
     );
   }
 
+  /** Ladrillo visto (paredes del taller). */
+  brick(repeat: { x: number; y: number }): Texture {
+    return this.make(
+      'brick',
+      (ctx, s) => {
+        const rng = new Rng(31);
+        ctx.fillStyle = '#b9ad9c';
+        ctx.fillRect(0, 0, s, s);
+        const rows = 8;
+        const cols = 4;
+        const h = s / rows;
+        const w = s / cols;
+        const gap = Math.max(1, s / 128);
+        for (let r = 0; r < rows; r++) {
+          const shift = r % 2 === 0 ? 0 : w / 2;
+          for (let c = -1; c < cols; c++) {
+            const tone = 130 + Math.floor(rng.next() * 35);
+            ctx.fillStyle = `rgb(${tone + 25}, ${Math.floor(tone * 0.62)}, ${Math.floor(tone * 0.48)})`;
+            ctx.fillRect(c * w + shift + gap, r * h + gap, w - gap * 2, h - gap * 2);
+          }
+        }
+      },
+      repeat,
+    );
+  }
+
   ceiling(): Texture {
     return this.make('ceiling', (ctx, s) => {
       const rng = new Rng(5);
@@ -203,7 +229,7 @@ export class TextureFactory {
 
   /** Tarjeta de orden: las cuatro formas de izquierda a derecha, numeradas. */
   orderCard(symbols: readonly ShapeKey[], title: string, aspect = 1): Texture {
-    return this.make(`order-${symbols.join('-')}-${aspect.toFixed(2)}`, (ctx, s) => {
+    return this.make(`order-${title}-${symbols.join('-')}-${aspect.toFixed(2)}`, (ctx, s) => {
       ctx.scale(1 / aspect, 1);
       const W = s * aspect;
       const u = Math.min(W, s);
@@ -229,6 +255,57 @@ export class TextureFactory {
         ctx.stroke();
         ctx.font = `${Math.floor(u * 0.1)}px Georgia, 'Times New Roman', serif`;
         ctx.fillText(String(i + 1), cx, s * 0.86);
+      });
+    });
+  }
+
+  /**
+   * Ficha de calibración: un dial por columna, con sus marcas (la de arriba más larga), la
+   * aguja en su posición y el número de la posición debajo, para no depender del dibujo.
+   */
+  dialClue(positions: readonly number[], count: number, title: string, aspect = 1): Texture {
+    return this.make(`dials-${positions.join('-')}-${count}-${aspect.toFixed(2)}`, (ctx, s) => {
+      ctx.scale(1 / aspect, 1);
+      const W = s * aspect;
+      const u = Math.min(W, s);
+      ctx.fillStyle = PAPER;
+      ctx.fillRect(0, 0, W, s);
+      ctx.fillStyle = INK;
+      ctx.strokeStyle = INK;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `bold ${Math.floor(u * 0.12)}px Georgia, 'Times New Roman', serif`;
+      ctx.fillText(title, W / 2, s * 0.13);
+      const cell = (W * 0.9) / Math.max(1, positions.length);
+      const r = Math.min(cell * 0.38, s * 0.24);
+      positions.forEach((position, i) => {
+        const cx = W * 0.05 + cell * (i + 0.5);
+        const cy = s * 0.5;
+        ctx.lineWidth = u / 70;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let m = 0; m < count; m++) {
+          const a = (m / count) * Math.PI * 2;
+          const inner = m === 0 ? r * 0.6 : r * 0.78;
+          ctx.lineWidth = m === 0 ? u / 55 : u / 110;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.sin(a) * inner, cy - Math.cos(a) * inner);
+          ctx.lineTo(cx + Math.sin(a) * r * 0.95, cy - Math.cos(a) * r * 0.95);
+          ctx.stroke();
+        }
+        const a = (position / count) * Math.PI * 2;
+        ctx.lineWidth = u / 40;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.sin(a) * r * 0.75, cy - Math.cos(a) * r * 0.75);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, u / 50, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = `bold ${Math.floor(u * 0.13)}px Georgia, 'Times New Roman', serif`;
+        ctx.fillText(String(position + 1), cx, s * 0.86);
       });
     });
   }

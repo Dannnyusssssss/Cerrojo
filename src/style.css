@@ -433,6 +433,24 @@ output {
   color: var(--muted);
 }
 
+/* «Combinar»: mientras se elige el segundo objeto, borde grueso y texto distinto. */
+.inv-combine {
+  min-height: 48px;
+  padding: 0 12px;
+  border: 2px solid var(--muted);
+  border-radius: 8px;
+  background: #2c2621;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inv-combine-on {
+  border: 4px solid var(--accent);
+  color: var(--accent);
+}
+
 .touch-mode .inventory-bar {
   top: max(16px, env(safe-area-inset-top));
   bottom: auto;
@@ -485,6 +503,90 @@ output {
   font-size: 2rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/* Diales y símbolos: dibujo arriba y su número o nombre debajo (no solo el dibujo). */
+.wheel-dial,
+.wheel-symbol {
+  width: 72px;
+  height: 84px;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.wheel-dial .icon,
+.wheel-symbol .icon {
+  width: 44px;
+  height: 44px;
+}
+
+.wheel:has(.wheel-dial) .wheel-btn,
+.wheel:has(.wheel-symbol) .wheel-btn {
+  width: 72px;
+}
+
+.wheel-caption {
+  line-height: 1.1;
+}
+
+/* Interruptores: forma y número; luces rellenas con ✓ cuando se encienden. */
+.seq-lights {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.seq-light {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid var(--muted);
+  border-radius: 50%;
+  font-weight: 700;
+  color: #120f0c;
+}
+
+.seq-light-on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.seq-count {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.switches-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.switch-btn {
+  width: 72px;
+  height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+}
+
+.switch-btn .icon {
+  width: 40px;
+  height: 40px;
+}
+
+.switch-number {
+  font-weight: 700;
 }
 
 /* Fallo: el panel tiembla (o, con «Reducir movimiento», solo cambia el borde) y hay mensaje. */

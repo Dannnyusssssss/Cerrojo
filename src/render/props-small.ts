@@ -14,7 +14,7 @@ import {
 } from 'three';
 import { TEXTS } from '../data/texts';
 import type { InteractableDef } from '../game/room';
-import type { PropContext } from './props';
+import type { PropContext } from './prop-view';
 import { localSize, mat, mesh, metal, shapeGeometry } from './prop-kit';
 import type { TextureFactory } from './textures';
 

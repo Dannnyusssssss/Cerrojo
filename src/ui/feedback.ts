@@ -3,7 +3,7 @@
  * Cada resultado tiene un mensaje visible; equivocarse nunca es silencioso.
  */
 import { TEXTS } from '../data/texts';
-import type { GameState, Outcome } from '../game/game-state';
+import type { CombineResult, GameState, Outcome } from '../game/game-state';
 import type { ItemDef } from '../game/room';
 import type { Piece } from './lock-panels';
 
@@ -30,6 +30,18 @@ export function outcomeMessage(outcome: Outcome, items: readonly ItemDef[]): str
     case 'toggled':
     case 'none':
       return null;
+  }
+}
+
+/** Mensaje tras intentar combinar dos objetos (nunca silencioso). */
+export function combineMessage(result: CombineResult, items: readonly ItemDef[]): string {
+  switch (result.kind) {
+    case 'combined':
+      return TEXTS.messages.combined(itemName(items, result.item));
+    case 'noMatch':
+      return TEXTS.messages.combineNoMatch;
+    case 'invalid':
+      return TEXTS.messages.combineCancelled;
   }
 }
 

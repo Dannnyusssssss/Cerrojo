@@ -5,6 +5,7 @@ import { App } from './app';
 import { logError } from './core/errors';
 import { seedFromWord } from './core/rng';
 import { GAME_TITLE } from './data/meta';
+import { ROOMS } from './data/rooms';
 import { initialSettings } from './game/settings';
 import { getBrowserStorage, SaveStore } from './save/storage';
 import { parseDebugParams } from './validation/url-params';
@@ -26,7 +27,7 @@ function boot(): void {
     logError('promise', event.reason);
   });
 
-  const debug = parseDebugParams(window.location.search);
+  const debug = parseDebugParams(window.location.search, ROOMS.length);
   const media = (query: string): boolean => window.matchMedia(query).matches;
   const defaults = initialSettings({
     reducedMotion: media('(prefers-reduced-motion: reduce)'),

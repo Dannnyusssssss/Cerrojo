@@ -12,8 +12,7 @@ import {
   PlaneGeometry,
 } from 'three';
 import type { ShapeKey } from '../data/shapes';
-import type { InteractableDef, RoomDef } from '../game/room';
-import type { RoomAnswers } from '../game/seeded';
+import type { InteractableDef } from '../game/room';
 import {
   buildOpenBox,
   interiorMaterial,
@@ -23,73 +22,10 @@ import {
   metal,
   shapeGeometry,
 } from './prop-kit';
+import { PropView, type PropContext } from './prop-view';
 import { buildSmallProp } from './props-small';
+import { createWorkshopProp } from './props-workshop';
 import type { TextureFactory } from './textures';
-
-const OPEN_SPEED = 4; // fracciones de apertura por segundo
-
-export class PropView {
-  readonly def: InteractableDef;
-  /** Raíz colocada en el mundo. */
-  readonly root = new Group();
-  /** Parte visual (lo que se clona para examinar y lo que se resalta). */
-  readonly body: Group;
-  private readonly applyOpen: (t: number) => void;
-  private readonly applySlots: ((filled: readonly boolean[]) => void) | undefined;
-  private progress = 0;
-  private target = 0;
-
-  constructor(
-    def: InteractableDef,
-    body: Group,
-    applyOpen: (t: number) => void,
-    applySlots?: (filled: readonly boolean[]) => void,
-  ) {
-    this.def = def;
-    this.body = body;
-    this.applyOpen = applyOpen;
-    this.applySlots = applySlots;
-    this.root.position.set(def.position.x, def.position.y, def.position.z);
-    this.root.rotation.y = def.rotationY ?? 0;
-    this.root.add(body);
-  }
-
-  setOpen(open: boolean, instant: boolean): void {
-    this.target = open ? 1 : 0;
-    if (instant) {
-      this.progress = this.target;
-      this.applyOpen(this.progress);
-    }
-  }
-
-  /** Muestra qué huecos están ocupados (solo el panel de huecos lo usa). */
-  setSlots(filled: readonly boolean[]): void {
-    this.applySlots?.(filled);
-  }
-
-  setVisible(visible: boolean): void {
-    this.root.visible = visible;
-  }
-
-  update(dt: number): void {
-    if (this.progress === this.target) return;
-    const step = OPEN_SPEED * dt;
-    this.progress =
-      this.target > this.progress
-        ? Math.min(this.target, this.progress + step)
-        : Math.max(this.target, this.progress - step);
-    // Suavizado de entrada y salida.
-    const t = this.progress * this.progress * (3 - 2 * this.progress);
-    this.applyOpen(t);
-  }
-}
-
-/** Lo que necesitan los constructores de objetos además de su definición. */
-export interface PropContext {
-  textures: TextureFactory;
-  answers: RoomAnswers;
-  room: RoomDef;
-}
 
 const noop = (): void => undefined;
 
@@ -300,6 +236,6 @@ export function createProp(def: InteractableDef, ctx: PropContext): PropView {
     case 'slotPanel':
       return buildSlotPanel(def, ctx);
     default:
-      return new PropView(def, buildSmallProp(def, ctx), noop);
+      return createWorkshopProp(def, ctx) ?? new PropView(def, buildSmallProp(def, ctx), noop);
   }
 }

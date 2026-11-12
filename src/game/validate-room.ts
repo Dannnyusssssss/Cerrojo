@@ -1,10 +1,44 @@
 /**
  * Validación estática de una sala (regla de solución garantizada): referencias correctas,
- * sin ciclos, todo objeto se usa, toda pista se puede ver antes del puzzle que la necesita y
- * la salida es alcanzable. Devuelve la lista de errores (vacía si la sala es válida).
+ * sin ciclos, todo objeto se consigue de un solo modo y se usa en un solo puzzle, el inventario
+ * nunca se llena, toda pista se puede ver antes del puzzle que la necesita y la salida es
+ * alcanzable. Devuelve la lista de errores (vacía si la sala es válida).
  */
-import { puzzleNeeds } from './puzzles';
-import type { InteractableDef, PuzzleDef, RoomDef } from './room';
+import { INVENTORY_CAPACITY } from './game-state';
+import { puzzleNeeds, puzzleResult } from './puzzles';
+import { puzzleTarget, type InteractableDef, type PuzzleDef, type RoomDef } from './room';
+
+/** Comprobaciones propias de cada tipo (medidas y formas coherentes). */
+function checkPuzzleShape(p: PuzzleDef, errors: string[]): void {
+  switch (p.type) {
+    case 'sequence':
+      if (p.switches.length < 2 || new Set(p.switches).size !== p.switches.length)
+        errors.push(`${p.id}: los interruptores deben tener formas distintas (al menos 2)`);
+      break;
+    case 'dial':
+      if (
+        !Number.isInteger(p.dials) ||
+        p.dials < 1 ||
+        !Number.isInteger(p.positions) ||
+        p.positions < 2
+      )
+        errors.push(`${p.id}: diales o posiciones inválidos`);
+      break;
+    case 'symbol-lock':
+      if (
+        new Set(p.symbols).size !== p.symbols.length ||
+        p.wheels < 1 ||
+        p.wheels > p.symbols.length
+      )
+        errors.push(`${p.id}: la cerradura necesita formas distintas y no más ruedas que formas`);
+      break;
+    case 'combine':
+      if (p.inputs[0] === p.inputs[1]) errors.push(`${p.id}: combina un objeto consigo mismo`);
+      break;
+    default:
+      break;
+  }
+}
 
 function duplicates(ids: readonly string[]): string[] {
   const seen = new Set<string>();
@@ -28,6 +62,9 @@ export function validateRoom(room: RoomDef): string[] {
     errors.push(`puzzle duplicado: ${id}`);
   for (const id of duplicates(room.items.map((i) => i.id)))
     errors.push(`objeto de inventario duplicado: ${id}`);
+  // Con tantos objetos como casillas como mucho, el inventario nunca se llena.
+  if (room.items.length > INVENTORY_CAPACITY)
+    errors.push(`demasiados objetos: ${room.items.length} (máximo ${INVENTORY_CAPACITY})`);
 
   // Referencias.
   const pickupOf = new Map<string, InteractableDef>();
@@ -49,16 +86,36 @@ export function validateRoom(room: RoomDef): string[] {
     }
     if (d.clue !== undefined) clueCarrier.set(d.clue, d);
   }
+  // Objetos que se obtienen al combinar otros.
+  const madeBy = new Map<string, PuzzleDef>();
   for (const p of room.puzzles) {
-    if (!defs.has(p.target)) errors.push(`${p.id}: objetivo inexistente ${p.target}`);
+    const result = puzzleResult(p);
+    if (result === null) continue;
+    if (!items.has(result)) errors.push(`${p.id}: entrega un objeto inexistente ${result}`);
+    else if (pickupOf.has(result) || madeBy.has(result))
+      errors.push(`${result}: se puede conseguir de dos modos`);
+    else madeBy.set(result, p);
+  }
+  const consumedBy = new Map<string, string>();
+  for (const p of room.puzzles) {
+    checkPuzzleShape(p, errors);
+    const target = puzzleTarget(p);
+    if (target !== undefined && !defs.has(target))
+      errors.push(`${p.id}: objetivo inexistente ${target}`);
     const needs = puzzleNeeds(p);
-    for (const item of needs.items)
-      if (!pickupOf.has(item)) errors.push(`${p.id}: el objeto ${item} no se puede conseguir`);
+    for (const item of needs.items) {
+      if (!pickupOf.has(item) && !madeBy.has(item))
+        errors.push(`${p.id}: el objeto ${item} no se puede conseguir`);
+      // Usar un objeto lo gasta: si dos puzzles lo necesitaran, uno quedaría sin solución.
+      const other = consumedBy.get(item);
+      if (other !== undefined) errors.push(`${item}: lo necesitan ${other} y ${p.id}`);
+      consumedBy.set(item, p.id);
+    }
     for (const clue of needs.clues)
       if (!clueCarrier.has(clue)) errors.push(`${p.id}: la pista ${clue} no está en la sala`);
   }
-  const used = new Set(room.puzzles.flatMap((p) => puzzleNeeds(p).items));
-  for (const item of room.items) if (!used.has(item.id)) errors.push(`objeto sin uso: ${item.id}`);
+  for (const item of room.items)
+    if (!consumedBy.has(item.id)) errors.push(`objeto sin uso: ${item.id}`);
   const exits = room.puzzles.filter((p) => p.type === 'key-lock' && p.exit === true);
   if (exits.length !== 1)
     errors.push(`la sala debe tener exactamente una salida (tiene ${exits.length})`);
@@ -80,11 +137,14 @@ export function validateRoom(room: RoomDef): string[] {
     return result;
   };
   const puzzleDeps = (p: PuzzleDef): Set<string> => {
-    const deps = accessDeps(p.target, new Set());
+    const target = puzzleTarget(p);
+    const deps = target === undefined ? new Set<string>() : accessDeps(target, new Set());
     const needs = puzzleNeeds(p);
     for (const item of needs.items) {
       const pickup = pickupOf.get(item);
       if (pickup) for (const dep of accessDeps(pickup.id, new Set())) deps.add(dep);
+      const maker = madeBy.get(item);
+      if (maker) deps.add(maker.id);
     }
     for (const clue of needs.clues) {
       const carrier = clueCarrier.get(clue);
@@ -119,14 +179,20 @@ export function validateRoom(room: RoomDef): string[] {
     if (container.lock !== undefined && !solved.has(container.lock)) return false;
     return accessible(container.id);
   };
+  const obtainable = (item: string): boolean => {
+    const maker = madeBy.get(item);
+    if (maker) return solved.has(maker.id);
+    return accessible(pickupOf.get(item)?.id ?? '');
+  };
   let progress = true;
   while (progress) {
     progress = false;
     for (const p of room.puzzles) {
-      if (solved.has(p.id) || !accessible(p.target)) continue;
+      const target = puzzleTarget(p);
+      if (solved.has(p.id) || (target !== undefined && !accessible(target))) continue;
       const needs = puzzleNeeds(p);
       const ok =
-        needs.items.every((item) => accessible(pickupOf.get(item)?.id ?? '')) &&
+        needs.items.every(obtainable) &&
         needs.clues.every((clue) => accessible(clueCarrier.get(clue)?.id ?? ''));
       if (ok) {
         solved.add(p.id);

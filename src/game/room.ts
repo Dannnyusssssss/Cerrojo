@@ -4,7 +4,7 @@
  */
 import type { Vec3 } from '../core/math';
 import type { ShapeKey } from '../data/shapes';
-import type { ObjectNameKey } from '../data/texts';
+import type { ObjectNameKey, RoomTitleKey } from '../data/texts';
 import type { Rect } from './collision';
 
 export interface Aabb {
@@ -16,7 +16,7 @@ export interface Aabb {
   maxZ: number;
 }
 
-export type FurnitureKind = 'desk' | 'table' | 'shelf' | 'cabinet';
+export type FurnitureKind = 'desk' | 'table' | 'shelf' | 'cabinet' | 'workbench' | 'rack' | 'crate';
 
 /** Mueble: un bloque apoyado en el suelo. (x, z) es el centro; w, d, h las medidas. */
 export interface FurnitureDef {
@@ -47,7 +47,17 @@ export type PropKind =
   | 'doorKey'
   | 'block'
   | 'postcard'
-  | 'orderCard';
+  | 'orderCard'
+  | 'toolbox'
+  | 'fuseCover'
+  | 'switchboard'
+  | 'diagram'
+  | 'lightBox'
+  | 'safe'
+  | 'handle'
+  | 'bit'
+  | 'crankArm'
+  | 'crankGrip';
 
 /**
  * examine: abre la vista de examen (y descubre su pista, si la tiene).
@@ -90,7 +100,16 @@ export interface InteractableDef {
   approach: { x: number; z: number };
 }
 
-export type ItemIcon = 'key' | 'doorKey' | 'block';
+export type ItemIcon =
+  | 'key'
+  | 'doorKey'
+  | 'block'
+  | 'handle'
+  | 'bit'
+  | 'screwdriver'
+  | 'crankArm'
+  | 'crankGrip'
+  | 'crank';
 
 export interface ItemDef {
   id: string;
@@ -131,10 +150,70 @@ export interface PlacementDef {
   slots: readonly { shape: ShapeKey; item: string }[];
 }
 
-export type PuzzleDef = KeyLockDef | CodeLockDef | PlacementDef;
+export interface SequenceDef {
+  id: string;
+  type: 'sequence';
+  target: string;
+  /** Interruptores en el orden en que se ven; cada uno lleva la etiqueta de una forma. */
+  switches: readonly ShapeKey[];
+  /** Pista con el orden de pulsación (formas en orden, por semilla). */
+  orderClue: string;
+}
+
+export interface DialDef {
+  id: string;
+  type: 'dial';
+  target: string;
+  /** Cantidad de diales. */
+  dials: number;
+  /** Posiciones de cada dial (0 es arriba). */
+  positions: number;
+  /** Pista con la posición de cada dial (por semilla). */
+  clue: string;
+}
+
+export interface SymbolLockDef {
+  id: string;
+  type: 'symbol-lock';
+  target: string;
+  /** Formas por las que pasa cada rueda, en orden. */
+  symbols: readonly ShapeKey[];
+  /** Cantidad de ruedas. */
+  wheels: number;
+  /** Pista con la forma de cada rueda, en orden (por semilla). */
+  clue: string;
+}
+
+export interface CombineDef {
+  id: string;
+  type: 'combine';
+  /** Los dos objetos del inventario que se unen (en cualquier orden). Se gastan al unirlos. */
+  inputs: readonly [string, string];
+  /** Objeto que se obtiene. */
+  result: string;
+}
+
+export type PuzzleDef =
+  KeyLockDef | CodeLockDef | PlacementDef | SequenceDef | DialDef | SymbolLockDef | CombineDef;
+
+/** Tipos de puzzle que se resuelven con un panel de ruedas (números, agujas o formas). */
+export type WheelPuzzleDef = CodeLockDef | DialDef | SymbolLockDef;
+
+export function isWheelPuzzle(def: PuzzleDef): def is WheelPuzzleDef {
+  return def.type === 'code-lock' || def.type === 'dial' || def.type === 'symbol-lock';
+}
+
+/** Objeto de la sala sobre el que se resuelve un puzzle; combinar no tiene (es en el inventario). */
+export function puzzleTarget(def: PuzzleDef): string | undefined {
+  return def.type === 'combine' ? undefined : def.target;
+}
 
 export interface RoomDef {
   id: string;
+  /** Nombre visible de la sala y título del resultado (en texts.ts). */
+  titleKey: RoomTitleKey;
+  /** Acabado de las paredes (papel pintado por defecto). */
+  walls?: 'wallpaper' | 'brick';
   /** Medidas interiores en metros. La sala ocupa x ∈ [-width/2, width/2], z ∈ [-depth/2, depth/2]. */
   width: number;
   depth: number;

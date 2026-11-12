@@ -3,6 +3,7 @@
  */
 import {
   BoxGeometry,
+  CylinderGeometry,
   Group,
   HemisphereLight,
   Mesh,
@@ -18,7 +19,8 @@ import type { GameState } from '../game/game-state';
 import type { FurnitureDef, RoomDef } from '../game/room';
 import type { RoomAnswers } from '../game/seeded';
 import { buildOpenBox, forEachMesh, interiorMaterial } from './prop-kit';
-import { createProp, type PropView } from './props';
+import type { PropView } from './prop-view';
+import { createProp } from './props';
 import { TextureFactory } from './textures';
 
 export class RoomView {
@@ -84,7 +86,10 @@ export class RoomView {
 
     const wallMaterial = (length: number): MeshStandardMaterial =>
       new MeshStandardMaterial({
-        map: this.textures.wallpaper({ x: length / 1.5, y: h / 1.5 }),
+        map:
+          room.walls === 'brick'
+            ? this.textures.brick({ x: length / 1.2, y: h / 1.2 })
+            : this.textures.wallpaper({ x: length / 1.5, y: h / 1.5 }),
         roughness: 0.95,
       });
     const walls: { x: number; z: number; ry: number; length: number }[] = [
@@ -141,7 +146,59 @@ export class RoomView {
       group.add(mesh);
     };
     const top = 0.05;
+    const steel = new MeshStandardMaterial({ color: 0x6f767a, roughness: 0.5, metalness: 0.5 });
     switch (f.kind) {
+      case 'workbench': {
+        // Tablero grueso, patas, balda baja y cuerpo de cajón (el cajón interactuable va delante).
+        // El tablero se dibuja 4 mm por debajo de su altura lógica para que lo que se apoya
+        // encima (la caja de herramientas) no parpadee contra él.
+        const thick = 0.07;
+        add(f.w, thick, f.d, 0, f.h - thick / 2 - 0.004, 0, dark);
+        const legX = f.w / 2 - 0.06;
+        const legZ = f.d / 2 - 0.06;
+        for (const sx of [-1, 1]) {
+          for (const sz of [-1, 1])
+            add(0.08, f.h - thick, 0.08, sx * legX, (f.h - thick) / 2, sz * legZ, dark);
+        }
+        add(f.w - 0.12, 0.03, f.d - 0.12, 0, 0.18, 0, wood);
+        add(0.6, 0.3, f.d - 0.04, -f.w / 2 + 0.4, f.h - thick - 0.15, 0, wood);
+        break;
+      }
+      case 'rack': {
+        // Estantería metálica abierta con tarros decorativos (de cara a la sala, +x).
+        for (const sz of [-1, 1]) {
+          for (const sx of [-1, 1])
+            add(0.04, f.h, 0.04, sx * (f.w / 2 - 0.02), f.h / 2, sz * (f.d / 2 - 0.02), steel);
+        }
+        const jarMat = new MeshStandardMaterial({
+          color: 0x9fb7a8,
+          roughness: 0.3,
+          metalness: 0.1,
+        });
+        const jarGeo = new CylinderGeometry(0.06, 0.06, 0.16, 12);
+        for (let i = 0; i < 4; i++) {
+          const y = 0.1 + i * ((f.h - 0.15) / 3);
+          add(f.w, 0.025, f.d, 0, y, 0, steel);
+          if (i < 3) {
+            for (const z of [-0.4, 0.05, 0.42]) {
+              const jar = new Mesh(jarGeo, jarMat);
+              jar.position.set(0.05, y + 0.095, z * (f.d / 1.4) + (i % 2) * 0.08);
+              jar.castShadow = true;
+              group.add(jar);
+            }
+          }
+        }
+        break;
+      }
+      case 'crate': {
+        // Cajón de madera de listones: caja y tres listones en cada lado. Se dibuja 4 mm más
+        // bajo que su altura lógica para que lo que va encima (la caja fuerte) no parpadee.
+        add(f.w, f.h - 0.004, f.d, 0, (f.h - 0.004) / 2, 0, wood);
+        for (const y of [0.25, 0.5, 0.75]) {
+          add(f.w + 0.01, 0.02, f.d + 0.01, 0, f.h * y, 0, dark);
+        }
+        break;
+      }
       case 'table':
       case 'desk': {
         add(f.w, top, f.d, 0, f.h - top / 2, 0, wood);

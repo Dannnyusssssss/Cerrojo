@@ -6,9 +6,10 @@ import type { Axes, InputState } from '../core/input';
 import { lookDirection, type Vec3 } from '../core/math';
 import { INTERACTION, PLAYER } from '../data/config';
 import type { Rect } from './collision';
-import { GameState, type Outcome } from './game-state';
+import { GameState, type CombineResult, type Outcome } from './game-state';
 import { pickInteractable, type PickResult, type PickTarget, type Ray } from './interaction';
 import type { PlaceResult } from './puzzles/placement';
+import type { PressResult } from './puzzles/sequence';
 import { createPlayer, stepPlayer, type PlayerState } from './player';
 import { interactableBox, roomColliders, roomOccluders, type Aabb, type RoomDef } from './room';
 import type { RoomAnswers } from './seeded';
@@ -86,6 +87,20 @@ export class World {
   place(puzzle: string, slot: number, item: string): PlaceResult {
     this.timer.start();
     const result = this.state.place(puzzle, slot, item);
+    this.afterChange();
+    return result;
+  }
+
+  pressSwitch(puzzle: string, index: number): PressResult {
+    this.timer.start();
+    const result = this.state.pressSwitch(puzzle, index);
+    this.afterChange();
+    return result;
+  }
+
+  combine(a: string, b: string): CombineResult {
+    this.timer.start();
+    const result = this.state.combine(a, b);
     this.afterChange();
     return result;
   }

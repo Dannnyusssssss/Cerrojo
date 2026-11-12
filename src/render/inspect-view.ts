@@ -19,7 +19,7 @@ import {
 } from 'three';
 import { clamp } from '../core/math';
 import { INSPECT } from '../data/config';
-import type { PropView } from './props';
+import type { PropView } from './prop-view';
 
 const FIT_SIZE = 0.55;
 const CAMERA_DISTANCE = 1.2;

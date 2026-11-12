@@ -7,6 +7,7 @@ import type { RoomDef } from '../../game/room';
 
 export const ROOM_1: RoomDef = {
   id: 'room-1',
+  titleKey: 'study',
   width: 6,
   depth: 5,
   height: 2.8,

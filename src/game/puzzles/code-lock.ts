@@ -1,6 +1,9 @@
 /** Cerradura de ruedas numéricas (0 a 9). */
 import type { ShapeKey } from '../../data/shapes';
 import type { CodeLockDef } from '../room';
+import type { ClueContent, KnownClue } from './clue';
+
+export type { ClueContent };
 
 /** Gira una rueda: de 9 pasa a 0 y de 0 a 9. */
 export function stepWheel(digit: number, delta: number): number {
@@ -11,19 +14,11 @@ export function codeMatches(answer: readonly number[], attempt: readonly number[
   return answer.length === attempt.length && answer.every((digit, i) => attempt[i] === digit);
 }
 
-/** Contenido de una pista generada por la semilla. */
-export type ClueContent =
-  | { kind: 'symbolDigit'; symbol: ShapeKey; digit: number }
-  | { kind: 'order'; symbols: readonly ShapeKey[] };
-
 /**
  * Deduce el código a partir de las pistas que se conocen. Devuelve null si falta alguna o si
  * no llevan a una única respuesta (una forma sin dígito, o con dos).
  */
-export function codeFromClues(
-  def: CodeLockDef,
-  known: (clue: string) => ClueContent | undefined,
-): number[] | null {
+export function codeFromClues(def: CodeLockDef, known: KnownClue): number[] | null {
   const order = known(def.orderClue);
   if (order?.kind !== 'order') return null;
   const digits = new Map<ShapeKey, number>();

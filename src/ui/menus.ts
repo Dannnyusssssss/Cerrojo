@@ -24,6 +24,7 @@ export class Menus {
   private readonly pauseHint: HTMLParagraphElement;
   private readonly resultTime: HTMLParagraphElement;
   private readonly resultAids: HTMLParagraphElement;
+  private readonly resultTitle: HTMLHeadingElement;
   private readonly callbacks: MenuCallbacks;
   private current: Screen | null = null;
   private settingsReturn: Screen = 'start';
@@ -43,6 +44,7 @@ export class Menus {
     this.pauseHint = el('p', { className: 'pause-hint', text: TEXTS.pause.clickToContinue });
     this.resultTime = el('p', { className: 'result-time' });
     this.resultAids = el('p', { className: 'pause-hint', text: TEXTS.result.withAids });
+    this.resultTitle = el('h2', { className: 'screen-title' });
     this.screens = {
       start: this.buildStart(),
       pause: this.buildPause(),
@@ -80,33 +82,31 @@ export class Menus {
   }
 
   /** Datos de la pantalla de resultado. */
-  setResult(time: string, withAids: boolean): void {
+  setResult(title: string, time: string, withAids: boolean): void {
+    this.resultTitle.textContent = title;
+    this.screens.result.setAttribute('aria-label', title);
     this.resultTime.textContent = TEXTS.result.time(time);
     setHidden(this.resultAids, !withAids);
   }
 
   private buildResult(): HTMLElement {
-    return el(
-      'section',
-      { className: 'screen screen-result', attrs: { 'aria-label': TEXTS.result.title } },
-      [
-        el('h2', { className: 'screen-title', text: TEXTS.result.title }),
-        this.resultTime,
-        this.resultAids,
-        el('div', { className: 'menu-buttons' }, [
-          button(
-            TEXTS.result.replay,
-            () => {
-              this.callbacks.onReplay();
-            },
-            'btn btn-primary',
-          ),
-          button(TEXTS.result.home, () => {
-            this.callbacks.onHome();
-          }),
-        ]),
-      ],
-    );
+    return el('section', { className: 'screen screen-result' }, [
+      this.resultTitle,
+      this.resultTime,
+      this.resultAids,
+      el('div', { className: 'menu-buttons' }, [
+        button(
+          TEXTS.result.replay,
+          () => {
+            this.callbacks.onReplay();
+          },
+          'btn btn-primary',
+        ),
+        button(TEXTS.result.home, () => {
+          this.callbacks.onHome();
+        }),
+      ]),
+    ]);
   }
 
   /** Refleja en los controles unos ajustes ya validados. */

@@ -6,24 +6,29 @@ import type { ItemDef, PuzzleDef } from '../game/room';
 import type { World } from '../game/world';
 import { el, setHidden } from './dom';
 import { piecesInInventory } from './feedback';
-import { CodeLockPanel, PlacementPanel } from './lock-panels';
+import { PlacementPanel } from './lock-panels';
+import { SequencePanel } from './sequence-panel';
+import { WheelPanel } from './wheel-panel';
 
 export class PuzzlePanels {
   readonly root: HTMLDivElement;
-  private readonly code: CodeLockPanel;
+  private readonly wheels: WheelPanel;
   private readonly placement: PlacementPanel;
+  private readonly sequence: SequencePanel;
   private readonly world: () => World;
   private readonly onClosed: () => void;
+  private items: readonly ItemDef[];
   private openPuzzle: string | null = null;
 
   constructor(world: () => World, items: readonly ItemDef[], onClosed: () => void) {
     this.world = world;
+    this.items = items;
     this.onClosed = onClosed;
     const close = (): void => {
       this.close();
     };
-    this.code = new CodeLockPanel({
-      onTry: (code) => this.openPuzzle !== null && this.world().tryCode(this.openPuzzle, code),
+    this.wheels = new WheelPanel({
+      onTry: (values) => this.openPuzzle !== null && this.world().tryCode(this.openPuzzle, values),
       onClose: close,
       onSolved: close,
     });
@@ -31,13 +36,20 @@ export class PuzzlePanels {
       onPlace: (slot, item) => this.world().place(this.openPuzzle ?? '', slot, item),
       onClose: close,
       onSolved: close,
-      pieces: () => piecesInInventory(this.world().state, items),
+      pieces: () => piecesInInventory(this.world().state, this.items),
       slots: () => this.world().state.placementSlots(this.openPuzzle ?? ''),
       isSolved: () => this.world().state.isSolved(this.openPuzzle ?? ''),
     });
+    this.sequence = new SequencePanel({
+      onPress: (index) => this.world().pressSwitch(this.openPuzzle ?? '', index),
+      progress: () => this.world().state.sequenceProgress(this.openPuzzle ?? ''),
+      onClose: close,
+      onSolved: close,
+    });
     this.root = el('div', { className: 'menus panel-layer' }, [
-      this.code.root,
+      this.wheels.root,
       this.placement.root,
+      this.sequence.root,
     ]);
     setHidden(this.root, true);
   }
@@ -46,15 +58,41 @@ export class PuzzlePanels {
     return this.openPuzzle !== null;
   }
 
+  /** Partida nueva (quizá en otra sala): olvida las ruedas y usa los objetos de esa sala. */
+  reset(items: readonly ItemDef[]): void {
+    this.items = items;
+    this.wheels.reset();
+    this.hide();
+  }
+
   open(puzzle: PuzzleDef, selectedItem: string | null): void {
     this.openPuzzle = puzzle.id;
     setHidden(this.root, false);
-    if (puzzle.type === 'code-lock') this.code.open(puzzle.symbols.length);
-    else if (puzzle.type === 'placement') {
-      this.placement.open(
-        puzzle.slots.map((s) => s.shape),
-        selectedItem,
-      );
+    switch (puzzle.type) {
+      case 'code-lock':
+        this.wheels.open(puzzle.id, puzzle.symbols.length, { kind: 'digit' });
+        break;
+      case 'dial':
+        this.wheels.open(puzzle.id, puzzle.dials, { kind: 'dial', positions: puzzle.positions });
+        break;
+      case 'symbol-lock':
+        this.wheels.open(puzzle.id, puzzle.wheels, { kind: 'symbol', symbols: puzzle.symbols });
+        break;
+      case 'placement':
+        this.placement.open(
+          puzzle.slots.map((s) => s.shape),
+          selectedItem,
+        );
+        break;
+      case 'sequence':
+        this.sequence.open(puzzle.switches);
+        break;
+      case 'key-lock':
+      case 'combine':
+        // No tienen panel: se resuelven usando objetos.
+        this.openPuzzle = null;
+        setHidden(this.root, true);
+        break;
     }
   }
 
@@ -68,8 +106,9 @@ export class PuzzlePanels {
   /** Cierra sin avisar (al volver al inicio o empezar otra partida). */
   hide(): void {
     this.openPuzzle = null;
-    this.code.close();
+    this.wheels.close();
     this.placement.close();
+    this.sequence.close();
     setHidden(this.root, true);
   }
 }

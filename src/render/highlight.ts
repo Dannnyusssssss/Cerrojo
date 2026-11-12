@@ -4,7 +4,7 @@
  */
 import { EdgesGeometry, LineBasicMaterial, LineSegments } from 'three';
 import { forEachMesh } from './prop-kit';
-import type { PropView } from './props';
+import type { PropView } from './prop-view';
 
 export class Highlighter {
   private readonly material = new LineBasicMaterial({

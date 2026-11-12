@@ -4,10 +4,19 @@
  * gasta ni pierde nada.
  */
 import { Inventory } from './inventory';
-import { codeMatches, type ClueContent } from './puzzles/code-lock';
+import type { ClueContent } from './puzzles/clue';
+import { codeMatches } from './puzzles/code-lock';
+import { combineMatches } from './puzzles/combine';
 import { keyFits } from './puzzles/key-lock';
 import { emptySlots, placementComplete, placeResult, type PlaceResult } from './puzzles/placement';
-import type { InteractableDef, PuzzleDef, RoomDef } from './room';
+import { pressSwitch, type PressResult } from './puzzles/sequence';
+import {
+  isWheelPuzzle,
+  puzzleTarget,
+  type InteractableDef,
+  type PuzzleDef,
+  type RoomDef,
+} from './room';
 import type { RoomAnswers } from './seeded';
 
 export const INVENTORY_CAPACITY = 8;
@@ -24,7 +33,12 @@ export type Outcome =
   | { kind: 'unlocked'; id: string; item: string; finished: boolean };
 
 /** Acción que se muestra junto al nombre del objeto señalado. */
-export type ActionLabel = 'examine' | 'open' | 'close' | 'take' | 'use' | 'tryCode' | 'place';
+export type ActionLabel =
+  'examine' | 'open' | 'close' | 'take' | 'use' | 'tryCode' | 'place' | 'operate';
+
+/** Resultado de combinar dos objetos del inventario. */
+export type CombineResult =
+  { kind: 'combined'; item: string } | { kind: 'noMatch' } | { kind: 'invalid' };
 
 export class GameState {
   readonly room: RoomDef;
@@ -37,6 +51,8 @@ export class GameState {
   private readonly seen = new Set<string>();
   private readonly solved = new Set<string>();
   private readonly placements = new Map<string, (string | null)[]>();
+  /** Interruptores accionados bien seguidos, por puzzle de secuencia. */
+  private readonly sequences = new Map<string, number>();
   private finishedFlag = false;
   /** Cuenta los cambios de estado (el render y la interfaz se actualizan al verlo cambiar). */
   version = 0;
@@ -114,11 +130,17 @@ export class GameState {
         return 'examine';
       case 'pickup':
         return 'take';
-      case 'panel':
-        return 'place';
+      case 'panel': {
+        const puzzle = def.puzzle === undefined ? undefined : this.puzzles.get(def.puzzle);
+        if (puzzle?.type === 'sequence') return 'operate';
+        return puzzle !== undefined && isWheelPuzzle(puzzle) ? 'tryCode' : 'place';
+      }
       case 'toggle': {
         const lock = this.lockOf(id);
-        if (lock?.type === 'code-lock' && !this.solved.has(lock.id)) return 'tryCode';
+        if (lock && !this.solved.has(lock.id)) {
+          if (isWheelPuzzle(lock)) return 'tryCode';
+          if (lock.type === 'sequence') return 'operate';
+        }
         return this.open.has(id) ? 'close' : 'open';
       }
     }
@@ -164,7 +186,8 @@ export class GameState {
   private toggle(def: InteractableDef, selectedItem: string | null): Outcome {
     const lock = this.lockOf(def.id);
     if (lock && !this.solved.has(lock.id)) {
-      if (lock.type === 'code-lock') return { kind: 'panel', puzzle: lock.id };
+      if (isWheelPuzzle(lock) || lock.type === 'sequence')
+        return { kind: 'panel', puzzle: lock.id };
       if (lock.type === 'key-lock') {
         if (selectedItem === null || !this.inventory.has(selectedItem)) {
           return { kind: 'locked', id: def.id };
@@ -190,16 +213,22 @@ export class GameState {
   /** Resolver un puzzle abre su objetivo; el de salida termina la sala. */
   private solve(puzzle: PuzzleDef): void {
     this.solved.add(puzzle.id);
-    const target = this.defs.get(puzzle.target);
+    const targetId = puzzleTarget(puzzle);
+    const target = targetId === undefined ? undefined : this.defs.get(targetId);
     if (target?.behavior === 'toggle') this.open.add(target.id);
     if (puzzle.type === 'key-lock' && puzzle.exit === true) this.finishedFlag = true;
     this.version += 1;
   }
 
-  /** Prueba un código en una cerradura de ruedas. Fallar no tiene consecuencias. */
+  /**
+   * Prueba una combinación en un puzzle de ruedas (números, diales o formas). Fallar no tiene
+   * consecuencias.
+   */
   tryCode(puzzleId: string, attempt: readonly number[]): boolean {
     const puzzle = this.puzzles.get(puzzleId);
-    if (puzzle?.type !== 'code-lock' || !this.isVisible(puzzle.target)) return false;
+    if (puzzle === undefined || !isWheelPuzzle(puzzle) || !this.isVisible(puzzle.target)) {
+      return false;
+    }
     if (this.solved.has(puzzleId)) return true;
     const answer = this.answers.codes.get(puzzleId);
     if (!answer || !codeMatches(answer, attempt)) return false;
@@ -224,5 +253,38 @@ export class GameState {
     this.version += 1;
     if (placementComplete(puzzle, slots)) this.solve(puzzle);
     return 'placed';
+  }
+
+  /** Interruptores accionados bien seguidos en un puzzle de secuencia. */
+  sequenceProgress(puzzleId: string): number {
+    return this.sequences.get(puzzleId) ?? 0;
+  }
+
+  /** Acciona un interruptor. Equivocarse solo reinicia la secuencia. */
+  pressSwitch(puzzleId: string, index: number): PressResult {
+    const puzzle = this.puzzles.get(puzzleId);
+    if (puzzle?.type !== 'sequence' || !this.isVisible(puzzle.target)) return 'invalid';
+    if (this.solved.has(puzzleId)) return 'solved';
+    if (!Number.isInteger(index) || index < 0 || index >= puzzle.switches.length) return 'invalid';
+    const answer = this.answers.codes.get(puzzleId) ?? [];
+    const step = pressSwitch(answer, this.sequenceProgress(puzzleId), index);
+    this.sequences.set(puzzleId, step.progress);
+    this.version += 1;
+    if (step.result === 'solved') this.solve(puzzle);
+    return step.result;
+  }
+
+  /** Une dos objetos del inventario. Si no combinan, los dos siguen en el inventario. */
+  combine(a: string, b: string): CombineResult {
+    if (a === b || !this.inventory.has(a) || !this.inventory.has(b)) return { kind: 'invalid' };
+    const recipe = this.room.puzzles.find(
+      (p) => p.type === 'combine' && !this.solved.has(p.id) && combineMatches(p, a, b),
+    );
+    if (recipe?.type !== 'combine') return { kind: 'noMatch' };
+    this.inventory.remove(a);
+    this.inventory.remove(b);
+    this.inventory.add(recipe.result);
+    this.solve(recipe);
+    return { kind: 'combined', item: recipe.result };
   }
 }
