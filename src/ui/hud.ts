@@ -13,6 +13,8 @@ export class Hud {
   private readonly focusAction: HTMLSpanElement;
   private readonly toast: HTMLDivElement;
   private readonly inspectBar: HTMLDivElement;
+  private readonly timer: HTMLDivElement;
+  private readonly hint: HTMLParagraphElement;
   private toastTimer: number | undefined;
 
   constructor(onInspectBack: () => void) {
@@ -24,6 +26,8 @@ export class Hud {
       this.focusAction,
     ]);
     this.toast = el('div', { className: 'toast', attrs: { role: 'status' } });
+    this.timer = el('div', { className: 'hud-timer', attrs: { 'aria-label': TEXTS.timer.label } });
+    this.hint = el('p', { className: 'hud-hint' });
     const back = button(TEXTS.inspect.back, onInspectBack, 'btn btn-inspect-back');
     this.inspectBar = el('div', { className: 'inspect-bar' }, [
       el('p', { className: 'inspect-help', text: TEXTS.inspect.help }),
@@ -33,8 +37,11 @@ export class Hud {
       this.reticle,
       this.focusLabel,
       this.toast,
+      this.timer,
+      this.hint,
       this.inspectBar,
     ]);
+    setHidden(this.hint, true);
     setHidden(this.focusLabel, true);
     setHidden(this.toast, true);
     setHidden(this.inspectBar, true);
@@ -64,6 +71,17 @@ export class Hud {
       this.setFocus(null, null);
       this.inspectBar.querySelector('button')?.focus();
     }
+  }
+
+  /** Texto del cronómetro (solo toca el DOM si cambió). */
+  setTime(text: string): void {
+    if (this.timer.textContent !== text) this.timer.textContent = text;
+  }
+
+  /** Ayuda fija en pantalla (el primer puzzle), o null para quitarla. */
+  setHint(text: string | null): void {
+    setHidden(this.hint, text === null);
+    if (text !== null && this.hint.textContent !== text) this.hint.textContent = text;
   }
 
   showToast(text: string, ms = 3000): void {

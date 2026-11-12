@@ -3,7 +3,8 @@
  * Va acompañado del nombre en pantalla (hud.ts), así que no depende solo del color.
  */
 import { EdgesGeometry, LineBasicMaterial, LineSegments } from 'three';
-import { forEachMesh, type PropView } from './props';
+import { forEachMesh } from './prop-kit';
+import type { PropView } from './props';
 
 export class Highlighter {
   private readonly material = new LineBasicMaterial({

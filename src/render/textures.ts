@@ -4,6 +4,12 @@
  */
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace, type Texture } from 'three';
 import { Rng } from '../core/rng';
+import type { ShapeKey } from '../data/shapes';
+import { traceShape } from './canvas-shapes';
+
+/** Papel y tinta de las pistas: contraste alto para que se lean bien. */
+const PAPER = '#f3e8cf';
+const INK = '#22160c';
 
 type Draw = (ctx: CanvasRenderingContext2D, size: number) => void;
 
@@ -163,17 +169,118 @@ export class TextureFactory {
     });
   }
 
-  /** Contratapa con una inscripción legible en la vista de examen. */
-  bookBack(text: string): Texture {
-    return this.make(`book-back-${text}`, (ctx, s) => {
-      ctx.fillStyle = '#5b2a2a';
-      ctx.fillRect(0, 0, s, s);
-      ctx.fillStyle = '#f0e3c0';
-      ctx.fillRect(s * 0.08, s * 0.3, s * 0.84, s * 0.4);
-      ctx.fillStyle = '#2b1a10';
+  /**
+   * Pista de dígito: una forma y su número, en tinta oscura sobre papel claro, a tamaño grande
+   * para que se lea en la vista de examen. `background` es el color del objeto alrededor.
+   * `aspect` es ancho / alto de la cara donde se pega: se compensa para que el círculo no salga
+   * ovalado (y no se confunda con un cero).
+   */
+  digitClue(symbol: ShapeKey, digit: number, background: string, aspect = 1): Texture {
+    return this.make(`digit-${symbol}-${digit}-${background}-${aspect.toFixed(2)}`, (ctx, s) => {
+      // Se dibuja en un lienzo virtual de W × s que, al estirarse sobre la cara, queda sin deformar.
+      ctx.scale(1 / aspect, 1);
+      const W = s * aspect;
+      const u = Math.min(W, s);
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, W, s);
+      ctx.fillStyle = PAPER;
+      ctx.fillRect(W * 0.05, s / 2 - u * 0.32, W * 0.9, u * 0.64);
+      // Tres columnas que no se tocan: forma, signo igual y dígito.
+      const size = u * 0.36;
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = u / 30;
+      traceShape(ctx, symbol, W * 0.09, s / 2 - size / 2, size);
+      ctx.stroke();
+      ctx.fillStyle = INK;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      wrapText(ctx, text, s / 2, s / 2, s * 0.78, Math.floor(s / 11));
+      ctx.font = `bold ${Math.floor(u * 0.22)}px Georgia, 'Times New Roman', serif`;
+      ctx.fillText('=', W * 0.55, s / 2);
+      ctx.font = `bold ${Math.floor(u * 0.42)}px Georgia, 'Times New Roman', serif`;
+      ctx.fillText(String(digit), W * 0.78, s / 2 + u * 0.02);
+    });
+  }
+
+  /** Tarjeta de orden: las cuatro formas de izquierda a derecha, numeradas. */
+  orderCard(symbols: readonly ShapeKey[], title: string, aspect = 1): Texture {
+    return this.make(`order-${symbols.join('-')}-${aspect.toFixed(2)}`, (ctx, s) => {
+      ctx.scale(1 / aspect, 1);
+      const W = s * aspect;
+      const u = Math.min(W, s);
+      ctx.fillStyle = PAPER;
+      ctx.fillRect(0, 0, W, s);
+      ctx.strokeStyle = '#8a6a3a';
+      ctx.lineWidth = u / 60;
+      ctx.strokeRect(u * 0.04, u * 0.04, W - u * 0.08, s - u * 0.08);
+      ctx.fillStyle = INK;
+      ctx.font = `bold ${Math.floor(u * 0.13)}px Georgia, 'Times New Roman', serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(title, W / 2, s * 0.2);
+      // Las formas van dentro del marco, con margen a cada lado.
+      const left = W * 0.08;
+      const cell = (W * 0.84) / Math.max(1, symbols.length);
+      const size = Math.min(cell * 0.72, s * 0.4);
+      symbols.forEach((symbol, i) => {
+        const cx = left + i * cell + cell / 2;
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = u / 45;
+        traceShape(ctx, symbol, cx - size / 2, s * 0.56 - size / 2, size);
+        ctx.stroke();
+        ctx.font = `${Math.floor(u * 0.1)}px Georgia, 'Times New Roman', serif`;
+        ctx.fillText(String(i + 1), cx, s * 0.86);
+      });
+    });
+  }
+
+  /** Cuadro: un paisaje sencillo de colinas y sol. */
+  painting(): Texture {
+    return this.make('painting', (ctx, s) => {
+      const sky = ctx.createLinearGradient(0, 0, 0, s);
+      sky.addColorStop(0, '#9cc3d8');
+      sky.addColorStop(1, '#f1dfb3');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = '#f6c65b';
+      ctx.beginPath();
+      ctx.arc(s * 0.72, s * 0.3, s * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+      const hill = (color: string, base: number, amp: number, phase: number): void => {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(0, s);
+        for (let x = 0; x <= s; x += s / 32) {
+          ctx.lineTo(x, base + Math.sin(x / (s / 3) + phase) * amp);
+        }
+        ctx.lineTo(s, s);
+        ctx.closePath();
+        ctx.fill();
+      };
+      hill('#7d9b5e', s * 0.66, s * 0.06, 0.4);
+      hill('#56703f', s * 0.8, s * 0.05, 2.1);
+    });
+  }
+
+  /** Frente de la postal: una casa con un árbol. */
+  postcardFront(): Texture {
+    return this.make('postcard-front', (ctx, s) => {
+      ctx.fillStyle = '#e9dcc0';
+      ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = '#c96a4a';
+      ctx.fillRect(s * 0.2, s * 0.45, s * 0.35, s * 0.35);
+      ctx.fillStyle = '#7a3a2a';
+      ctx.beginPath();
+      ctx.moveTo(s * 0.15, s * 0.47);
+      ctx.lineTo(s * 0.375, s * 0.25);
+      ctx.lineTo(s * 0.6, s * 0.47);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#5a7a44';
+      ctx.beginPath();
+      ctx.arc(s * 0.75, s * 0.5, s * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#6a4a2a';
+      ctx.fillRect(s * 0.73, s * 0.6, s * 0.04, s * 0.2);
     });
   }
 
@@ -199,33 +306,4 @@ export class TextureFactory {
     for (const texture of this.cache.values()) texture.dispose();
     this.cache.clear();
   }
-}
-
-function wrapText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  fontSize: number,
-): void {
-  ctx.font = `italic ${fontSize}px Georgia, 'Times New Roman', serif`;
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let line = '';
-  for (const word of words) {
-    const test = line.length === 0 ? word : `${line} ${word}`;
-    if (ctx.measureText(test).width > maxWidth && line.length > 0) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = test;
-    }
-  }
-  if (line.length > 0) lines.push(line);
-  const lineHeight = fontSize * 1.25;
-  const startY = y - ((lines.length - 1) * lineHeight) / 2;
-  lines.forEach((l, i) => {
-    ctx.fillText(l, x, startY + i * lineHeight);
-  });
 }

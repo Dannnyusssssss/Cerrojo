@@ -1,21 +1,29 @@
 /**
  * Objetos interactuables construidos con geometría por código. Cada uno sabe animar su
- * apertura; el estado (abierto o cerrado) lo decide la lógica.
+ * apertura y mostrar lo colocado en él; el estado lo decide la lógica (GameState).
+ * Aquí están los contenedores y mecanismos; los objetos pequeños, en props-small.ts.
  */
 import {
-  BackSide,
   BoxGeometry,
-  type BufferGeometry,
   CylinderGeometry,
   Group,
   Mesh,
   MeshStandardMaterial,
   PlaneGeometry,
-  type Material,
-  type Object3D,
 } from 'three';
-import type { InteractableDef } from '../game/room';
-import { TEXTS } from '../data/texts';
+import type { ShapeKey } from '../data/shapes';
+import type { InteractableDef, RoomDef } from '../game/room';
+import type { RoomAnswers } from '../game/seeded';
+import {
+  buildOpenBox,
+  interiorMaterial,
+  localSize,
+  mat,
+  mesh,
+  metal,
+  shapeGeometry,
+} from './prop-kit';
+import { buildSmallProp } from './props-small';
 import type { TextureFactory } from './textures';
 
 const OPEN_SPEED = 4; // fracciones de apertura por segundo
@@ -25,15 +33,22 @@ export class PropView {
   /** Raíz colocada en el mundo. */
   readonly root = new Group();
   /** Parte visual (lo que se clona para examinar y lo que se resalta). */
-  readonly body = new Group();
+  readonly body: Group;
   private readonly applyOpen: (t: number) => void;
+  private readonly applySlots: ((filled: readonly boolean[]) => void) | undefined;
   private progress = 0;
   private target = 0;
 
-  constructor(def: InteractableDef, body: Group, applyOpen: (t: number) => void) {
+  constructor(
+    def: InteractableDef,
+    body: Group,
+    applyOpen: (t: number) => void,
+    applySlots?: (filled: readonly boolean[]) => void,
+  ) {
     this.def = def;
     this.body = body;
     this.applyOpen = applyOpen;
+    this.applySlots = applySlots;
     this.root.position.set(def.position.x, def.position.y, def.position.z);
     this.root.rotation.y = def.rotationY ?? 0;
     this.root.add(body);
@@ -45,6 +60,15 @@ export class PropView {
       this.progress = this.target;
       this.applyOpen(this.progress);
     }
+  }
+
+  /** Muestra qué huecos están ocupados (solo el panel de huecos lo usa). */
+  setSlots(filled: readonly boolean[]): void {
+    this.applySlots?.(filled);
+  }
+
+  setVisible(visible: boolean): void {
+    this.root.visible = visible;
   }
 
   update(dt: number): void {
@@ -60,84 +84,17 @@ export class PropView {
   }
 }
 
-function mat(textures: TextureFactory | null, color: number, kind?: 'wood'): MeshStandardMaterial {
-  const material = new MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.05 });
-  if (kind === 'wood' && textures) material.map = textures.wood();
-  return material;
+/** Lo que necesitan los constructores de objetos además de su definición. */
+export interface PropContext {
+  textures: TextureFactory;
+  answers: RoomAnswers;
+  room: RoomDef;
 }
 
-function mesh(geometry: BufferGeometry, material: Material | Material[]): Mesh {
-  const m = new Mesh(geometry, material);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  return m;
-}
+const noop = (): void => undefined;
 
-/** Medidas locales: si el objeto está girado 90°, el ancho y el fondo del mundo se cruzan. */
-function localSize(def: InteractableDef): { w: number; h: number; d: number } {
-  const turned = Math.abs(Math.sin(def.rotationY ?? 0)) > 0.7;
-  return turned
-    ? { w: def.size.z, h: def.size.y, d: def.size.x }
-    : { w: def.size.x, h: def.size.y, d: def.size.z };
-}
-
-/** Caras de una caja: +x, -x, +y, -y, +z, -z (el mismo orden que BoxGeometry). */
-export type BoxFace = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
-const FACE_INDEX: Readonly<Record<BoxFace, number>> = { px: 0, nx: 1, py: 2, ny: 3, pz: 4, nz: 5 };
-
-/**
- * Material de los interiores: más oscuro que el exterior para que se lea la profundidad.
- * Se dibuja por la cara de atrás (BackSide): sobre la geometría exterior solo se ven las
- * paredes que quedan al fondo del hueco, nunca las que tapan desde fuera.
- */
-export function interiorMaterial(color = 0x2e1c10): MeshStandardMaterial {
-  return new MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, side: BackSide });
-}
-
-/** Caja sin una de sus caras, como un solo grupo de dibujo (una llamada por material). */
-function boxWithoutFace(w: number, h: number, d: number, face: BoxFace): BoxGeometry {
-  const geometry = new BoxGeometry(w, h, d);
-  const index = geometry.getIndex();
-  if (index === null) return geometry;
-  const kept: number[] = [];
-  for (const group of geometry.groups) {
-    if (group.materialIndex === FACE_INDEX[face]) continue;
-    for (let i = group.start; i < group.start + group.count; i++) kept.push(index.getX(i));
-  }
-  geometry.setIndex(kept);
-  geometry.clearGroups();
-  return geometry;
-}
-
-/**
- * Caja hueca con la cara `openFace` abierta, centrada en el origen. El exterior usa `outer` y
- * el interior `inner` sobre la misma geometría: en cada pared solo se ve uno de los dos, así que
- * no hay parpadeo y cuesta dos llamadas de dibujo. `floor` (opcional, solo con la cara de
- * arriba abierta) añade un forro en el fondo.
- */
-export function buildOpenBox(
-  w: number,
-  h: number,
-  d: number,
-  openFace: BoxFace,
-  outer: Material,
-  inner: MeshStandardMaterial,
-  floor?: Material,
-): Group {
-  const group = new Group();
-  const geometry = boxWithoutFace(w, h, d, openFace);
-  group.add(mesh(geometry, outer), mesh(geometry, inner));
-  if (floor && openFace === 'py') {
-    const lining = new Mesh(new PlaneGeometry(w * 0.98, d * 0.98), floor);
-    lining.rotation.x = -Math.PI / 2;
-    lining.position.y = -h / 2 + 0.002;
-    lining.receiveShadow = true;
-    group.add(lining);
-  }
-  return group;
-}
-
-function buildBox(def: InteractableDef, tx: TextureFactory): PropView {
+/** Cofre hueco con tapa y una placa de cuatro ruedas al frente. */
+function buildChest(def: InteractableDef, tx: TextureFactory): PropView {
   const { w, h, d } = localSize(def);
   const body = new Group();
   const wood = mat(tx, 0xb88a5a, 'wood');
@@ -150,29 +107,22 @@ function buildBox(def: InteractableDef, tx: TextureFactory): PropView {
   const lid = mesh(new BoxGeometry(w * 1.02, h * 0.2, d * 1.02), wood);
   lid.position.set(0, h * 0.1, d / 2);
   hinge.add(lid);
-  const clasp = mesh(new BoxGeometry(w * 0.12, h * 0.25, 0.01), mat(null, 0xc9a85b));
-  // El cierre va en el borde delantero de la tapa (la tapa está centrada a d/2 de la bisagra).
-  clasp.position.set(0, -h * 0.05, d * 0.51 + 0.005);
-  lid.add(clasp);
-  body.add(base, hinge);
+  // Placa de la cerradura con cuatro ruedas, en el frente de la caja.
+  const brass = metal(0xc9a85b);
+  const plate = mesh(new BoxGeometry(w * 0.5, h * 0.3, 0.01), brass);
+  plate.position.set(0, -h * 0.08, d / 2 + 0.005);
+  const wheelGeo = new CylinderGeometry(0.014, 0.014, 0.02, 12);
+  const wheelMat = mat(null, 0x3a2a1a);
+  for (let i = 0; i < 4; i++) {
+    const wheel = mesh(wheelGeo, wheelMat);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set((i - 1.5) * w * 0.1, 0, 0.012);
+    plate.add(wheel);
+  }
+  body.add(base, hinge, plate);
   return new PropView(def, body, (t) => {
     hinge.rotation.x = -1.9 * t;
   });
-}
-
-function buildBook(def: InteractableDef, tx: TextureFactory): PropView {
-  const { w, h, d } = localSize(def);
-  const body = new Group();
-  const cover = new MeshStandardMaterial({ map: tx.bookCover(), roughness: 0.8 });
-  const back = new MeshStandardMaterial({
-    map: tx.bookBack(TEXTS.inscriptions.book),
-    roughness: 0.8,
-  });
-  const pages = mat(null, 0xefe6d0);
-  const spine = mat(null, 0x5b2a2a);
-  // Orden de caras de BoxGeometry: +x, -x, +y, -y, +z, -z.
-  body.add(mesh(new BoxGeometry(w, h, d), [pages, spine, cover, back, pages, pages]));
-  return new PropView(def, body, () => undefined);
 }
 
 function buildDrawer(def: InteractableDef, tx: TextureFactory): PropView {
@@ -192,7 +142,7 @@ function buildDrawer(def: InteractableDef, tx: TextureFactory): PropView {
     interiorMaterial(),
   );
   box.position.z = -depth / 2 - d / 2;
-  const knob = mesh(new CylinderGeometry(0.018, 0.018, 0.03, 12), mat(null, 0xc9a85b));
+  const knob = mesh(new CylinderGeometry(0.018, 0.018, 0.03, 12), metal(0xc9a85b));
   knob.rotation.x = Math.PI / 2;
   knob.position.z = d / 2 + 0.015;
   slide.add(front, box, knob);
@@ -203,54 +153,153 @@ function buildDrawer(def: InteractableDef, tx: TextureFactory): PropView {
   });
 }
 
-function buildClock(def: InteractableDef, tx: TextureFactory): PropView {
-  const { w, d } = localSize(def);
-  const body = new Group();
-  const frame = mat(tx, 0x6b4a2a, 'wood');
-  const face = new MeshStandardMaterial({ map: tx.clockFace(), roughness: 0.6 });
-  // Orden de grupos del cilindro: lateral, tapa superior, tapa inferior.
-  const disc = mesh(new CylinderGeometry(w / 2, w / 2, d, 40), [frame, face, frame]);
-  disc.rotation.x = Math.PI / 2;
-  body.add(disc);
-  return new PropView(def, body, () => undefined);
+/** Puerta con bisagra a la izquierda (vista desde delante) que se abre hacia delante. */
+function hingedDoor(
+  w: number,
+  h: number,
+  d: number,
+  material: MeshStandardMaterial,
+  extras: (panel: Mesh) => void,
+): { group: Group; hinge: Group } {
+  const group = new Group();
+  const hinge = new Group();
+  hinge.position.x = -w / 2;
+  const panel = mesh(new BoxGeometry(w, h, d), material);
+  panel.position.x = w / 2;
+  extras(panel);
+  hinge.add(panel);
+  group.add(hinge);
+  return { group, hinge };
 }
 
 function buildCabinetDoor(def: InteractableDef, tx: TextureFactory): PropView {
   const { w, h, d } = localSize(def);
+  const { group, hinge } = hingedDoor(w, h, d, mat(tx, 0x9a6a3c, 'wood'), (panel) => {
+    const brass = metal(0xc9a85b);
+    // Tirador y cerradura cerca del borde libre (posiciones relativas al centro del panel).
+    const handle = mesh(new BoxGeometry(0.03, 0.18, 0.03), brass);
+    handle.position.set(w / 2 - 0.07, 0, d / 2 + 0.02);
+    const lockPlate = mesh(new CylinderGeometry(0.02, 0.02, 0.01, 16), brass);
+    lockPlate.rotation.x = Math.PI / 2;
+    lockPlate.position.set(w / 2 - 0.07, -0.16, d / 2 + 0.006);
+    panel.add(handle, lockPlate);
+  });
+  return new PropView(def, group, (t) => {
+    hinge.rotation.y = (-Math.PI / 2) * t;
+  });
+}
+
+/** Puerta de salida con marco; detrás, una luz cálida que se ve al abrirla. */
+function buildExitDoor(def: InteractableDef, tx: TextureFactory): PropView {
+  const { w, h, d } = localSize(def);
   const body = new Group();
-  const hinge = new Group();
-  hinge.position.x = -w / 2;
-  const panel = mesh(new BoxGeometry(w, h, d), mat(tx, 0x9a6a3c, 'wood'));
-  panel.position.x = w / 2;
-  const handle = mesh(new BoxGeometry(0.03, 0.18, 0.03), mat(null, 0xc9a85b));
-  // Cerca del borde libre de la puerta (posición relativa al centro del panel).
-  handle.position.set(w / 2 - 0.07, 0, d / 2 + 0.02);
-  hinge.add(panel);
-  panel.add(handle);
-  body.add(hinge);
-  return new PropView(def, body, (t) => {
-    hinge.rotation.y = -1.75 * t;
+  const { group, hinge } = hingedDoor(w, h, d, mat(tx, 0x7a4e2c, 'wood'), (panel) => {
+    const brass = metal(0xc9a85b);
+    const handle = mesh(new CylinderGeometry(0.03, 0.03, 0.06, 16), brass);
+    handle.rotation.x = Math.PI / 2;
+    handle.position.set(w / 2 - 0.1, 0, d / 2 + 0.03);
+    const keyhole = mesh(new BoxGeometry(0.05, 0.1, 0.008), metal(0x8a7040));
+    keyhole.position.set(w / 2 - 0.1, -0.12, d / 2 + 0.004);
+    // Molduras para que se lea como puerta y no como una tabla.
+    const trim = mat(tx, 0x5e3a1e, 'wood');
+    for (const y of [h * 0.22, -h * 0.22]) {
+      const moulding = mesh(new BoxGeometry(w * 0.7, h * 0.32, 0.012), trim);
+      moulding.position.set(0, y, d / 2 + 0.006);
+      panel.add(moulding);
+    }
+    panel.add(handle, keyhole);
   });
-}
-
-export function createProp(def: InteractableDef, textures: TextureFactory): PropView {
-  switch (def.prop) {
-    case 'box':
-      return buildBox(def, textures);
-    case 'book':
-      return buildBook(def, textures);
-    case 'drawer':
-      return buildDrawer(def, textures);
-    case 'clock':
-      return buildClock(def, textures);
-    case 'cabinetDoor':
-      return buildCabinetDoor(def, textures);
+  const frameMat = mat(tx, 0x4a2e18, 'wood');
+  const side = new BoxGeometry(0.08, h + 0.08, d + 0.04);
+  for (const sx of [-1, 1]) {
+    const post = mesh(side, frameMat);
+    post.position.set(sx * (w / 2 + 0.04), 0.04, 0);
+    body.add(post);
   }
+  const top = mesh(new BoxGeometry(w + 0.16, 0.08, d + 0.04), frameMat);
+  top.position.y = h / 2 + 0.04;
+  // Luz de fuera: solo se ve con la puerta abierta (queda detrás de ella).
+  const outside = new Mesh(
+    new PlaneGeometry(w, h),
+    new MeshStandardMaterial({ color: 0xfff2d6, emissive: 0xffe3b0, emissiveIntensity: 1.2 }),
+  );
+  outside.position.z = -d / 2 - 0.004;
+  body.add(group, top, outside);
+  return new PropView(def, body, (t) => {
+    hinge.rotation.y = -1.45 * t;
+  });
 }
 
-/** Recorre las mallas de un objeto (para resaltar o liberar memoria). */
-export function forEachMesh(root: Object3D, fn: (m: Mesh) => void): void {
-  root.traverse((child) => {
-    if (child instanceof Mesh) fn(child as Mesh);
+/** Panel con tres huecos de silueta y un compartimento que se abre al completarlo. */
+function buildSlotPanel(def: InteractableDef, ctx: PropContext): PropView {
+  const { w, h, d } = localSize(def);
+  const tx = ctx.textures;
+  const puzzle = ctx.room.puzzles.find((p) => p.id === def.puzzle);
+  const shapes: ShapeKey[] = puzzle?.type === 'placement' ? puzzle.slots.map((s) => s.shape) : [];
+  const body = new Group();
+  const wood = mat(tx, 0x8a5f38, 'wood');
+  const upperH = h * 0.62;
+  const board = mesh(new BoxGeometry(w, upperH, d), wood);
+  board.position.y = h / 2 - upperH / 2;
+  // Cada hueco: una silueta oscura con borde claro, y encima el bloque cuando se coloca.
+  // Silueta y bloque comparten centro, así que el bloque la tapa exactamente.
+  const cell = w / Math.max(1, shapes.length);
+  const size = Math.min(cell * 0.62, upperH * 0.8);
+  const hollowMat = new MeshStandardMaterial({ color: 0x1e1309, roughness: 1 });
+  const rimMat = new MeshStandardMaterial({ color: 0xe0c89a, roughness: 0.7 });
+  const blockMat = mat(tx, 0xd8b07a, 'wood');
+  const placed = shapes.map((shape, i) => {
+    const x = -w / 2 + cell * (i + 0.5);
+    const rim = mesh(shapeGeometry(shape, size * 1.14, 0.004), rimMat);
+    rim.position.set(x, 0, d / 2 + 0.002);
+    const hollow = mesh(shapeGeometry(shape, size, 0.004), hollowMat);
+    hollow.position.set(x, 0, d / 2 + 0.004);
+    const block = mesh(shapeGeometry(shape, size * 0.96, 0.03), blockMat);
+    block.position.set(x, 0, d / 2 + 0.02);
+    block.visible = false;
+    board.add(rim, hollow, block);
+    return block;
   });
+  // Compartimento: caja hueca abierta por delante y una tapa con bisagra abajo.
+  const lowerH = h - upperH;
+  const compartment = buildOpenBox(w, lowerH, d, 'pz', wood, interiorMaterial());
+  compartment.position.y = -h / 2 + lowerH / 2;
+  const flapHinge = new Group();
+  flapHinge.position.set(0, -h / 2, d / 2);
+  const flap = mesh(new BoxGeometry(w * 0.96, lowerH * 0.96, 0.015), mat(tx, 0x6e4626, 'wood'));
+  flap.position.set(0, (lowerH * 0.96) / 2, 0.008);
+  const pull = mesh(new BoxGeometry(0.08, 0.015, 0.02), metal(0xc9a85b));
+  pull.position.set(0, lowerH * 0.3, 0.015);
+  flap.add(pull);
+  flapHinge.add(flap);
+  body.add(board, compartment, flapHinge);
+  return new PropView(
+    def,
+    body,
+    (t) => {
+      flapHinge.rotation.x = (Math.PI / 2) * t;
+    },
+    (filled) => {
+      placed.forEach((block, i) => {
+        block.visible = filled[i] === true;
+      });
+    },
+  );
+}
+
+export function createProp(def: InteractableDef, ctx: PropContext): PropView {
+  switch (def.prop) {
+    case 'chest':
+      return buildChest(def, ctx.textures);
+    case 'drawer':
+      return buildDrawer(def, ctx.textures);
+    case 'cabinetDoor':
+      return buildCabinetDoor(def, ctx.textures);
+    case 'exitDoor':
+      return buildExitDoor(def, ctx.textures);
+    case 'slotPanel':
+      return buildSlotPanel(def, ctx);
+    default:
+      return new PropView(def, buildSmallProp(def, ctx), noop);
+  }
 }

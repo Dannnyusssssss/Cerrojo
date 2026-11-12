@@ -6,19 +6,24 @@ import { QUALITIES, SETTINGS_RANGES, type Quality, type Settings } from '../data
 import { TEXTS } from '../data/texts';
 import { button, el, setHidden } from './dom';
 
-export type Screen = 'start' | 'pause' | 'settings';
+export type Screen = 'start' | 'pause' | 'settings' | 'result';
 
 export interface MenuCallbacks {
   onPlay(): void;
   onResume(): void;
   /** Recibe los valores leídos de los controles; quien llama los valida y guarda. */
   onSettingsChange(values: Settings): void;
+  /** Pantalla de resultado: nueva partida con otra semilla, o volver al inicio. */
+  onReplay(): void;
+  onHome(): void;
 }
 
 export class Menus {
   readonly root: HTMLDivElement;
   private readonly screens: Record<Screen, HTMLElement>;
   private readonly pauseHint: HTMLParagraphElement;
+  private readonly resultTime: HTMLParagraphElement;
+  private readonly resultAids: HTMLParagraphElement;
   private readonly callbacks: MenuCallbacks;
   private current: Screen | null = null;
   private settingsReturn: Screen = 'start';
@@ -36,10 +41,13 @@ export class Menus {
   constructor(callbacks: MenuCallbacks) {
     this.callbacks = callbacks;
     this.pauseHint = el('p', { className: 'pause-hint', text: TEXTS.pause.clickToContinue });
+    this.resultTime = el('p', { className: 'result-time' });
+    this.resultAids = el('p', { className: 'pause-hint', text: TEXTS.result.withAids });
     this.screens = {
       start: this.buildStart(),
       pause: this.buildPause(),
       settings: this.buildSettings(),
+      result: this.buildResult(),
     };
     this.root = el('div', { className: 'menus' }, Object.values(this.screens));
     this.show(null);
@@ -69,6 +77,36 @@ export class Menus {
   /** Vuelve de los ajustes a la pantalla desde la que se abrieron. */
   closeSettings(): void {
     this.show(this.settingsReturn);
+  }
+
+  /** Datos de la pantalla de resultado. */
+  setResult(time: string, withAids: boolean): void {
+    this.resultTime.textContent = TEXTS.result.time(time);
+    setHidden(this.resultAids, !withAids);
+  }
+
+  private buildResult(): HTMLElement {
+    return el(
+      'section',
+      { className: 'screen screen-result', attrs: { 'aria-label': TEXTS.result.title } },
+      [
+        el('h2', { className: 'screen-title', text: TEXTS.result.title }),
+        this.resultTime,
+        this.resultAids,
+        el('div', { className: 'menu-buttons' }, [
+          button(
+            TEXTS.result.replay,
+            () => {
+              this.callbacks.onReplay();
+            },
+            'btn btn-primary',
+          ),
+          button(TEXTS.result.home, () => {
+            this.callbacks.onHome();
+          }),
+        ]),
+      ],
+    );
   }
 
   /** Refleja en los controles unos ajustes ya validados. */

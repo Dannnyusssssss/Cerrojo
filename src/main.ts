@@ -36,7 +36,7 @@ function boot(): void {
   const store = new SaveStore(getBrowserStorage(), defaults);
   store.load();
   const seed = debug.seed ?? createSeed();
-  new App(root, { seed, debug, store }).start();
+  new App(root, { seed, debug, store, newSeed: createSeed }).start();
 }
 
 boot();

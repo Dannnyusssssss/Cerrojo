@@ -40,9 +40,11 @@ export const TOUCH = {
   /** Lado mínimo de un objetivo táctil, en píxeles CSS. */
   minTarget: 44,
   joystickRadius: 56,
-  /** Un toque que se mueve menos que esto (en px) y dura menos que tapMs es un toque de interacción. */
+  /**
+   * Un toque que se mueve menos que esto (en px) es un toque de interacción, dure lo que dure:
+   * ningún paso exige rapidez.
+   */
   tapMaxMove: 12,
-  tapMaxMs: 300,
 } as const;
 
 export type Quality = 'low' | 'medium' | 'high';

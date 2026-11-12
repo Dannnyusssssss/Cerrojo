@@ -14,26 +14,49 @@ import {
   type Object3D,
 } from 'three';
 import { QUALITY_PROFILES, type Quality } from '../data/config';
+import type { GameState } from '../game/game-state';
 import type { FurnitureDef, RoomDef } from '../game/room';
-import { buildOpenBox, createProp, forEachMesh, interiorMaterial, type PropView } from './props';
+import type { RoomAnswers } from '../game/seeded';
+import { buildOpenBox, forEachMesh, interiorMaterial } from './prop-kit';
+import { createProp, type PropView } from './props';
 import { TextureFactory } from './textures';
 
 export class RoomView {
   readonly group = new Group();
   readonly props = new Map<string, PropView>();
   private readonly textures: TextureFactory;
+  private syncedVersion = -1;
 
-  constructor(room: RoomDef, quality: Quality) {
+  constructor(room: RoomDef, quality: Quality, answers: RoomAnswers) {
     const profile = QUALITY_PROFILES[quality];
     this.textures = new TextureFactory(profile.textureSize);
     this.buildShell(room);
     for (const f of room.furniture) this.group.add(this.buildFurniture(f));
     for (const def of room.interactables) {
-      const prop = createProp(def, this.textures);
+      const prop = createProp(def, { textures: this.textures, answers, room });
       this.props.set(def.id, prop);
       this.group.add(prop.root);
     }
     this.buildLights(room, profile.shadows);
+  }
+
+  /**
+   * Refleja el estado de la partida: qué objetos se ven, cuáles están abiertos y qué huecos
+   * están ocupados. Solo trabaja cuando el estado cambió.
+   */
+  sync(state: GameState, instant: boolean): void {
+    if (!instant && this.syncedVersion === state.version) return;
+    this.syncedVersion = state.version;
+    for (const [id, prop] of this.props) {
+      const def = prop.def;
+      prop.setVisible(state.isVisible(id));
+      const solvedPanel =
+        def.behavior === 'panel' && def.puzzle !== undefined && state.isSolved(def.puzzle);
+      prop.setOpen(state.isOpen(id) || solvedPanel, instant);
+      if (def.puzzle !== undefined) {
+        prop.setSlots(state.placementSlots(def.puzzle).map((slot) => slot !== null));
+      }
+    }
   }
 
   update(dt: number): void {
