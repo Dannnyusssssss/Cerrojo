@@ -1,29 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { TEST_ROOM } from '../src/data/rooms/test-room';
+import { PLAYER } from '../src/data/config';
+import { ROOM_1 } from '../src/data/rooms/room-1';
 import { TEXTS } from '../src/data/texts';
-import { aabbIntersects, interactableBox, roomOccluders } from '../src/game/room';
+import { circleOverlapsAny } from '../src/game/collision';
+import { aabbIntersects, interactableBox, roomColliders, roomOccluders } from '../src/game/room';
+import { validateRoom } from '../src/game/validate-room';
 
-describe('validación estática de la sala de prueba', () => {
-  const occluders = roomOccluders(TEST_ROOM);
+describe('Sala 1: validación estática', () => {
+  const occluders = roomOccluders(ROOM_1);
 
-  it('los identificadores son únicos', () => {
-    const ids = [
-      ...TEST_ROOM.furniture.map((f) => f.id),
-      ...TEST_ROOM.interactables.map((i) => i.id),
-    ];
-    expect(new Set(ids).size).toBe(ids.length);
+  it('pasa la validación de solución garantizada', () => {
+    expect(validateRoom(ROOM_1)).toEqual([]);
   });
 
-  it('tiene entre 4 y 5 objetos interactuables con nombre visible', () => {
-    expect(TEST_ROOM.interactables.length).toBeGreaterThanOrEqual(4);
-    expect(TEST_ROOM.interactables.length).toBeLessThanOrEqual(5);
-    for (const item of TEST_ROOM.interactables) {
+  it('todos los objetos y puzzles tienen nombre visible', () => {
+    for (const item of ROOM_1.interactables)
       expect(TEXTS.objects[item.nameKey].length).toBeGreaterThan(0);
-    }
+    for (const item of ROOM_1.items) expect(TEXTS.objects[item.nameKey].length).toBeGreaterThan(0);
+  });
+
+  it('tiene entre 4 y 5 puzzles y usa code-lock, key-lock y placement', () => {
+    expect(ROOM_1.puzzles.length).toBeGreaterThanOrEqual(4);
+    expect(ROOM_1.puzzles.length).toBeLessThanOrEqual(5);
+    expect(new Set(ROOM_1.puzzles.map((p) => p.type))).toEqual(
+      new Set(['code-lock', 'key-lock', 'placement']),
+    );
   });
 
   it('ningún objeto queda dentro de una pared o un mueble, abierto o cerrado', () => {
-    for (const item of TEST_ROOM.interactables) {
+    for (const item of ROOM_1.interactables) {
       for (const open of [false, true]) {
         const box = interactableBox(item, open);
         for (const occluder of occluders) {
@@ -34,14 +39,21 @@ describe('validación estática de la sala de prueba', () => {
   });
 
   it('los muebles quedan dentro de la sala', () => {
-    const hw = TEST_ROOM.width / 2;
-    const hd = TEST_ROOM.depth / 2;
-    for (const f of TEST_ROOM.furniture) {
+    const hw = ROOM_1.width / 2;
+    const hd = ROOM_1.depth / 2;
+    for (const f of ROOM_1.furniture) {
       expect(f.x - f.w / 2).toBeGreaterThanOrEqual(-hw);
       expect(f.x + f.w / 2).toBeLessThanOrEqual(hw);
       expect(f.z - f.d / 2).toBeGreaterThanOrEqual(-hd);
       expect(f.z + f.d / 2).toBeLessThanOrEqual(hd);
-      expect(f.h).toBeLessThan(TEST_ROOM.height);
+      expect(f.h).toBeLessThan(ROOM_1.height);
+    }
+  });
+
+  it('cada punto de acceso es un lugar donde el jugador cabe', () => {
+    const colliders = roomColliders(ROOM_1);
+    for (const item of ROOM_1.interactables) {
+      expect(circleOverlapsAny(item.approach, PLAYER.radius, colliders), item.id).toBe(false);
     }
   });
 });

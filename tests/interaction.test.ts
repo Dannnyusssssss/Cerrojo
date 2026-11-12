@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { InputState } from '../src/core/input';
 import { INTERACTION, PLAYER } from '../src/data/config';
-import { TEST_ROOM } from '../src/data/rooms/test-room';
+import { ROOM_1 } from '../src/data/rooms/room-1';
 import { pickInteractable, rayAabb, type PickTarget, type Ray } from '../src/game/interaction';
-import { actionLabel, createObjectStates, interact } from '../src/game/objects';
 import type { Aabb } from '../src/game/room';
+import { generateAnswers } from '../src/game/seeded';
+import { solveFrom } from '../src/game/solver';
 import { World } from '../src/game/world';
 
 const box = (x: number, z: number, half = 0.2): Aabb => ({
@@ -89,43 +90,7 @@ describe('selección de objetos', () => {
   });
 });
 
-describe('estados de los objetos', () => {
-  it('todos empiezan cerrados', () => {
-    const states = createObjectStates(TEST_ROOM);
-    expect([...states.values()].every((s) => !s.open)).toBe(true);
-  });
-
-  it('abrir y cerrar alterna el estado', () => {
-    const states = createObjectStates(TEST_ROOM);
-    expect(interact(TEST_ROOM, states, 'box')).toEqual({ kind: 'toggled', id: 'box', open: true });
-    expect(interact(TEST_ROOM, states, 'box')).toEqual({ kind: 'toggled', id: 'box', open: false });
-  });
-
-  it('examinar no cambia el estado', () => {
-    const states = createObjectStates(TEST_ROOM);
-    expect(interact(TEST_ROOM, states, 'book')).toEqual({ kind: 'inspect', id: 'book' });
-    expect(states.get('book')?.open).toBe(false);
-  });
-
-  it('un id desconocido no hace nada', () => {
-    const states = createObjectStates(TEST_ROOM);
-    expect(interact(TEST_ROOM, states, 'nada')).toEqual({ kind: 'none' });
-    expect(interact(TEST_ROOM, states, '__proto__')).toEqual({ kind: 'none' });
-  });
-
-  it('la acción mostrada sigue al estado', () => {
-    const states = createObjectStates(TEST_ROOM);
-    const drawer = TEST_ROOM.interactables.find((i) => i.id === 'drawer');
-    const book = TEST_ROOM.interactables.find((i) => i.id === 'book');
-    if (!drawer || !book) throw new Error('faltan objetos de prueba');
-    expect(actionLabel(drawer, states.get('drawer'))).toBe('open');
-    interact(TEST_ROOM, states, 'drawer');
-    expect(actionLabel(drawer, states.get('drawer'))).toBe('close');
-    expect(actionLabel(book, states.get('book'))).toBe('examine');
-  });
-});
-
-describe('mundo: selección desde la mirada del jugador', () => {
+describe('Sala 1: alcance real de cada objeto', () => {
   const lookAt = (world: World, x: number, y: number, z: number): void => {
     const p = world.player;
     const dx = x - p.x;
@@ -134,42 +99,71 @@ describe('mundo: selección desde la mirada del jugador', () => {
     p.pitch = Math.atan2(y - PLAYER.eyeHeight, Math.hypot(dx, dz));
   };
 
-  it('cada objeto de la sala se puede señalar de cerca', () => {
-    for (const def of TEST_ROOM.interactables) {
-      const world = new World(TEST_ROOM);
-      // Colocarse a 1 m del objeto, del lado de la sala.
-      const toCenter = Math.hypot(def.position.x, def.position.z) || 1;
-      world.player.x = def.position.x - (def.position.x / toCenter) * 1.0;
-      world.player.z = def.position.z - (def.position.z / toCenter) * 1.0;
-      lookAt(world, def.position.x, def.position.y, def.position.z);
-      expect(world.pick(world.viewRayFromPlayer())?.id, def.id).toBe(def.id);
+  /** Mundo con la sala resuelta hasta justo antes de usar la puerta, para que todo sea visible. */
+  const worldWithEverythingOpen = (): World => {
+    const world = new World(ROOM_1, generateAnswers(ROOM_1, 7));
+    // El resolvedor juega hasta el final; luego se miran los objetos que ya estaban abiertos.
+    solveFrom(world.state);
+    return world;
+  };
+
+  it('cada objeto se puede señalar desde su punto de acceso cuando es visible', () => {
+    // Se comprueba en dos momentos: al empezar y con todos los contenedores abiertos.
+    const fresh = new World(ROOM_1, generateAnswers(ROOM_1, 7));
+    const opened = worldWithEverythingOpen();
+    // Armario y cofre abiertos con su contenido todavía dentro.
+    const answers = generateAnswers(ROOM_1, 7);
+    const middle = new World(ROOM_1, answers);
+    middle.interact('drawer');
+    middle.interact('small-key');
+    middle.state.inventory.select(0);
+    middle.interact('cabinet-door');
+    middle.tryCode('p-chest', answers.codes.get('p-chest') ?? []);
+    expect(middle.state.isVisible('block-circle')).toBe(true);
+    expect(middle.state.isVisible('door-key')).toBe(true);
+    // Cajón abierto con la llave todavía dentro.
+    const drawerOpen = new World(ROOM_1, answers);
+    drawerOpen.interact('drawer');
+    const checked = new Set<string>();
+    for (const def of ROOM_1.interactables) {
+      for (const world of [fresh, drawerOpen, middle, opened]) {
+        if (!world.state.isVisible(def.id)) continue;
+        world.player.x = def.approach.x;
+        world.player.z = def.approach.z;
+        const open = world.state.isOpen(def.id);
+        const target = { ...def.position };
+        if (open && def.openOffset) {
+          target.x += def.openOffset.x;
+          target.y += def.openOffset.y;
+          target.z += def.openOffset.z;
+        }
+        lookAt(world, target.x, target.y, target.z);
+        expect(world.pick(world.viewRayFromPlayer())?.id, `${def.id} abierto=${open}`).toBe(def.id);
+        checked.add(def.id);
+      }
     }
+    // Todos los objetos se comprobaron al menos en uno de los tres momentos.
+    expect([...checked].sort()).toEqual(ROOM_1.interactables.map((d) => d.id).sort());
   });
 
-  it('desde el punto de aparición no se alcanza el reloj (demasiado lejos)', () => {
-    const world = new World(TEST_ROOM);
-    world.player.z = -1.5;
-    lookAt(world, 0, 1.85, 2.47);
-    expect(world.pick(world.viewRayFromPlayer())).toBeNull();
-  });
-
-  it('el cajón abierto se señala en su nueva posición', () => {
-    const world = new World(TEST_ROOM);
+  it('los objetos dentro de contenedores se alcanzan al abrirlos', () => {
+    const world = new World(ROOM_1, generateAnswers(ROOM_1, 7));
     world.player.x = -2.0;
-    world.player.z = -0.6;
-    lookAt(world, -2.0, 0.6, -1.675 + 0.32);
-    expect(world.pick(world.viewRayFromPlayer())).toBeNull();
-    world.interactWith('drawer');
-    expect(world.pick(world.viewRayFromPlayer())?.id).toBe('drawer');
+    world.player.z = -0.7;
+    lookAt(world, -2.0, 0.555, -1.5);
+    expect(world.pick(world.viewRayFromPlayer())?.id).not.toBe('small-key');
+    world.interact('drawer');
+    expect(world.pick(world.viewRayFromPlayer())?.id).toBe('small-key');
   });
 
-  it('el paso de lógica mueve al jugador con la entrada', () => {
-    const world = new World(TEST_ROOM);
+  it('el paso de lógica mueve al jugador y arranca el cronómetro', () => {
+    const world = new World(ROOM_1, generateAnswers(ROOM_1, 1));
     const input = new InputState();
+    expect(world.timer.started).toBe(false);
     input.press('forward');
     const z0 = world.player.z;
     world.step(input, 1 / 60);
     expect(world.player.z).toBeLessThan(z0);
-    expect(world.steps).toBe(1);
+    expect(world.timer.started).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PLAYER } from '../src/data/config';
-import { TEST_ROOM } from '../src/data/rooms/test-room';
+import { ROOM_1 } from '../src/data/rooms/room-1';
 import { circleOverlapsAny, moveCircle, pushOutOfRect, type Rect } from '../src/game/collision';
 import { createPlayer, stepPlayer, turnPlayer } from '../src/game/player';
 import { roomColliders } from '../src/game/room';
@@ -77,12 +77,12 @@ describe('colisión círculo contra rectángulo', () => {
 });
 
 describe('jugador en la sala de prueba', () => {
-  const colliders = roomColliders(TEST_ROOM);
+  const colliders = roomColliders(ROOM_1);
   const tuning = { radius: PLAYER.radius, walkSpeed: PLAYER.walkSpeed, maxPitch: PLAYER.maxPitch };
   const dt = 1 / 60;
 
   it('el punto de aparición no solapa nada', () => {
-    const p = createPlayer(TEST_ROOM.spawn);
+    const p = createPlayer(ROOM_1.spawn);
     expect(circleOverlapsAny({ x: p.x, z: p.z }, PLAYER.radius, colliders)).toBe(false);
   });
 
@@ -102,9 +102,9 @@ describe('jugador en la sala de prueba', () => {
 
   it('nunca atraviesa paredes ni muebles en un paseo aleatorio largo', () => {
     const rng = new Rng(2024);
-    const p = createPlayer(TEST_ROOM.spawn);
-    const hw = TEST_ROOM.width / 2;
-    const hd = TEST_ROOM.depth / 2;
+    const p = createPlayer(ROOM_1.spawn);
+    const hw = ROOM_1.width / 2;
+    const hd = ROOM_1.depth / 2;
     for (let i = 0; i < 20000; i++) {
       if (i % 30 === 0) turnPlayer(p, (rng.next() - 0.5) * 2, 0, PLAYER.maxPitch);
       stepPlayer(p, { x: rng.next() * 2 - 1, z: 1 }, dt, colliders, tuning);
