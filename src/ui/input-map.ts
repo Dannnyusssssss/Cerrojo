@@ -7,9 +7,20 @@ import type { ActionIntent, HeldIntent } from '../core/input';
 import { clamp } from '../core/math';
 
 export type KeyIntent =
-  { kind: 'held'; intent: HeldIntent } | { kind: 'action'; intent: ActionIntent };
+  | { kind: 'held'; intent: HeldIntent }
+  | { kind: 'action'; intent: ActionIntent }
+  | { kind: 'slot'; index: number };
+
+/** Teclas 1 a 8 (fila de números y teclado numérico): casillas del inventario 0 a 7. */
+const SLOT_KEYS: Readonly<Record<string, KeyIntent>> = Object.fromEntries(
+  Array.from({ length: 8 }, (_, i) => [
+    [`Digit${i + 1}`, { kind: 'slot', index: i }],
+    [`Numpad${i + 1}`, { kind: 'slot', index: i }],
+  ]).flat(),
+) as Record<string, KeyIntent>;
 
 const KEY_MAP: Readonly<Record<string, KeyIntent>> = {
+  ...SLOT_KEYS,
   KeyW: { kind: 'held', intent: 'forward' },
   KeyS: { kind: 'held', intent: 'back' },
   KeyA: { kind: 'held', intent: 'left' },
@@ -92,7 +103,10 @@ export function joystickAxes(dx: number, dy: number, radius: number): { x: numbe
   return { x: clamp(x, -1, 1), z: clamp(z, -1, 1) };
 }
 
-/** Un toque corto y casi quieto es un toque de interacción, no un arrastre. */
-export function isTap(movedPixels: number, durationMs: number): boolean {
-  return movedPixels <= TOUCH.tapMaxMove && durationMs <= TOUCH.tapMaxMs;
+/**
+ * Un toque casi quieto es un toque de interacción, no un arrastre. No hay límite de tiempo:
+ * mantener el dedo sin moverlo también cuenta (accesibilidad: nada exige rapidez).
+ */
+export function isTap(movedPixels: number): boolean {
+  return Number.isFinite(movedPixels) && movedPixels <= TOUCH.tapMaxMove;
 }

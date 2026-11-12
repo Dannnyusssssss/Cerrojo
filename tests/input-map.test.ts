@@ -34,6 +34,15 @@ describe('traducción de teclas', () => {
     expect(keyToIntent(code, noMods)).toEqual({ kind: 'action', intent });
   });
 
+  it('las teclas 1 a 8 (fila y teclado numérico) eligen casillas 0 a 7', () => {
+    expect(keyToIntent('Digit1', noMods)).toEqual({ kind: 'slot', index: 0 });
+    expect(keyToIntent('Digit8', noMods)).toEqual({ kind: 'slot', index: 7 });
+    expect(keyToIntent('Numpad3', noMods)).toEqual({ kind: 'slot', index: 2 });
+    expect(keyToIntent('Digit9', noMods)).toBeNull();
+    expect(keyToIntent('Digit0', noMods)).toBeNull();
+    expect(keyToIntent('Digit1', { ...noMods, ctrl: true })).toBeNull();
+  });
+
   it('teclas desconocidas y nombres del prototipo no son del juego', () => {
     for (const code of ['KeyZ', 'Tab', '', '__proto__', 'constructor', 'toString']) {
       expect(keyToIntent(code, noMods)).toBeNull();
@@ -103,9 +112,10 @@ describe('traducción de ratón y táctil', () => {
     expect(stick.moveAxes({ x: 0, z: 0 })).toEqual(keys.moveAxes({ x: 0, z: 0 }));
   });
 
-  it('un toque corto y quieto es interacción; un arrastre no', () => {
-    expect(isTap(3, 120)).toBe(true);
-    expect(isTap(40, 120)).toBe(false);
-    expect(isTap(3, 900)).toBe(false);
+  it('un toque quieto es interacción, dure lo que dure; un arrastre no', () => {
+    expect(isTap(3)).toBe(true);
+    expect(isTap(12)).toBe(true);
+    expect(isTap(40)).toBe(false);
+    expect(isTap(Number.NaN)).toBe(false);
   });
 });

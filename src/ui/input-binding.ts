@@ -23,6 +23,9 @@ export interface BindingCallbacks {
   onPointerLockChange(locked: boolean): void;
   onTouchDetected(): void;
   onFocusLost(): void;
+  /** True si las teclas 1 a 8 eligen objetos del inventario en este momento. */
+  slotsActive(): boolean;
+  onSlot(index: number): void;
 }
 
 interface Drag {
@@ -61,6 +64,15 @@ export class InputBinding {
     canvas.addEventListener('contextmenu', (event) => {
       event.preventDefault();
     });
+    // Un toque en la escena puede abrir un panel justo encima; sin esto, el clic que el
+    // navegador genera después del toque caería sobre el panel recién abierto.
+    canvas.addEventListener(
+      'touchend',
+      (event) => {
+        if (event.cancelable) event.preventDefault();
+      },
+      { passive: false },
+    );
   }
 
   get pointerLocked(): boolean {
@@ -91,6 +103,11 @@ export class InputBinding {
       meta: event.metaKey,
     });
     if (mapped === null) return;
+    if (mapped.kind === 'slot') {
+      // Teclas 1 a 8: casillas del inventario, explorando o con un panel abierto.
+      if (!event.repeat && !inForm && this.cb.slotsActive()) this.cb.onSlot(mapped.index);
+      return;
+    }
     if (mapped.kind === 'action') {
       // Esc y P funcionan también en los menús; las demás acciones solo jugando.
       const always = mapped.intent === 'back' || mapped.intent === 'pause';
@@ -176,11 +193,7 @@ export class InputBinding {
     const drag = this.drag;
     if (drag?.id !== event.pointerId) return;
     this.drag = null;
-    if (
-      drag.type === 'touch' &&
-      this.cb.exploring() &&
-      isTap(drag.moved, event.timeStamp - drag.startTime)
-    ) {
+    if (drag.type === 'touch' && this.cb.exploring() && isTap(drag.moved)) {
       this.cb.onTap(event.clientX, event.clientY);
     }
   };
