@@ -34,10 +34,12 @@ export class PlacementPanel {
   private readonly cb: PlacementCallbacks;
   private shapes: readonly ShapeKey[] = [];
   private chosen: string | null = null;
+  private readonly title: HTMLHeadingElement;
 
   constructor(callbacks: PlacementCallbacks) {
     this.cb = callbacks;
-    const shell = panelShell(TEXTS.placementPanel.title, TEXTS.placementPanel.help);
+    const shell = panelShell(TEXTS.objects.slotPanel, TEXTS.placementPanel.help);
+    this.title = shell.title;
     this.root = shell.root;
     this.body = shell.body;
     this.message = shell.message;
@@ -52,8 +54,13 @@ export class PlacementPanel {
     return !this.root.hidden;
   }
 
-  /** Abre el panel. `preselected` es el objeto en la mano, si es un bloque. */
-  open(shapes: readonly ShapeKey[], preselected: string | null): void {
+  /**
+   * Abre el panel con el nombre del objeto (`title`). `preselected` es el objeto en la mano,
+   * si es una de las piezas.
+   */
+  open(title: string, shapes: readonly ShapeKey[], preselected: string | null): void {
+    this.title.textContent = title;
+    this.root.setAttribute('aria-label', title);
     this.shapes = shapes;
     this.chosen = this.cb.pieces().some((p) => p.id === preselected) ? preselected : null;
     this.message.textContent = '';

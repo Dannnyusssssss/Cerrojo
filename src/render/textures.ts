@@ -11,7 +11,7 @@ import { traceShape } from './canvas-shapes';
 const PAPER = '#f3e8cf';
 const INK = '#22160c';
 
-type Draw = (ctx: CanvasRenderingContext2D, size: number) => void;
+export type Draw = (ctx: CanvasRenderingContext2D, size: number) => void;
 
 export class TextureFactory {
   private readonly size: number;
@@ -39,6 +39,11 @@ export class TextureFactory {
     }
     this.cache.set(key, texture);
     return texture;
+  }
+
+  /** Textura con un dibujo propio, guardada en caché por `key` (la usan otros módulos de render). */
+  custom(key: string, draw: Draw, repeat?: { x: number; y: number }): Texture {
+    return this.make(key, draw, repeat);
   }
 
   wood(repeat = { x: 1, y: 1 }): Texture {

@@ -1,30 +1,34 @@
 /**
- * Interruptores en orden: hay que accionarlos en el orden que indica una pista. Equivocarse
- * solo reinicia la secuencia (si el interruptor equivocado es el primero de la secuencia,
- * cuenta como el primer paso de un intento nuevo).
+ * Interruptores en orden: hay que accionarlos todos, cada uno una vez, en el orden que indica
+ * una pista. El panel no dice si cada pulsación va bien: solo se comprueba al accionar el
+ * último. Así el orden no se puede descubrir probando pulsación a pulsación y hace falta la
+ * pista. Si el orden no es el correcto, los interruptores vuelven a su sitio sin más.
  */
 import type { SequenceDef } from '../room';
 import type { KnownClue } from './clue';
 
-export type PressResult = 'right' | 'wrong' | 'solved' | 'invalid';
+/**
+ * pressed: accionado, faltan más. solved: era el último y el orden es correcto.
+ * wrong: era el último y el orden no es correcto (todo vuelve a su sitio).
+ * invalid: interruptor inexistente o ya accionado en este intento (no cambia nada).
+ */
+export type PressResult = 'pressed' | 'wrong' | 'solved' | 'invalid';
 
 /**
- * Avance tras accionar el interruptor `index`, dado el orden correcto (`answer`, índices de
- * los interruptores) y cuántos se llevan bien (`progress`).
+ * Resultado de accionar el interruptor `index`, dado el orden correcto (`answer`, índices de
+ * los interruptores) y los ya accionados en este intento (`pressed`, en orden).
  */
 export function pressSwitch(
   answer: readonly number[],
-  progress: number,
+  pressed: readonly number[],
   index: number,
-): { progress: number; result: PressResult } {
-  if (!Number.isInteger(index) || index < 0 || answer.length === 0) {
-    return { progress, result: 'invalid' };
-  }
-  if (answer[progress] === index) {
-    const next = progress + 1;
-    return { progress: next, result: next === answer.length ? 'solved' : 'right' };
-  }
-  return { progress: answer[0] === index ? 1 : 0, result: 'wrong' };
+): { pressed: number[]; result: PressResult } {
+  const valid = Number.isInteger(index) && index >= 0 && index < answer.length;
+  if (!valid || pressed.includes(index)) return { pressed: [...pressed], result: 'invalid' };
+  const next = [...pressed, index];
+  if (next.length < answer.length) return { pressed: next, result: 'pressed' };
+  const right = next.every((value, i) => answer[i] === value);
+  return right ? { pressed: next, result: 'solved' } : { pressed: [], result: 'wrong' };
 }
 
 /**

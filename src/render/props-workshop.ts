@@ -60,7 +60,9 @@ function buildToolbox(def: InteractableDef): PropView {
   grip.position.set(0, h * 0.2, d / 2);
   hinge.add(lid, grip);
   const lock = mesh(new BoxGeometry(0.05, 0.05, 0.01), metal(0xc9a85b));
-  lock.position.set(0, h * 0.1, d / 2 + 0.006);
+  // La placa queda 4 mm por delante de la pared: si su cara trasera coincidiera con la pared
+  // (de grosor cero), desde dentro parpadearían una contra otra al mover la cámara.
+  lock.position.set(0, h * 0.1, d / 2 + 0.009);
   const keyhole = mesh(new BoxGeometry(0.008, 0.022, 0.004), mat(null, 0x111111));
   keyhole.position.z = 0.006;
   lock.add(keyhole);

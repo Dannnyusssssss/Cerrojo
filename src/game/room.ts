@@ -16,7 +16,8 @@ export interface Aabb {
   maxZ: number;
 }
 
-export type FurnitureKind = 'desk' | 'table' | 'shelf' | 'cabinet' | 'workbench' | 'rack' | 'crate';
+export type FurnitureKind =
+  'desk' | 'table' | 'shelf' | 'cabinet' | 'workbench' | 'rack' | 'crate' | 'pedestal';
 
 /** Mueble: un bloque apoyado en el suelo. (x, z) es el centro; w, d, h las medidas. */
 export interface FurnitureDef {
@@ -57,7 +58,18 @@ export type PropKind =
   | 'handle'
   | 'bit'
   | 'crankArm'
-  | 'crankGrip';
+  | 'crankGrip'
+  | 'mapCase'
+  | 'globe'
+  | 'starChart'
+  | 'almanac'
+  | 'innerDoor'
+  | 'telescope'
+  | 'skyView'
+  | 'orrery'
+  | 'orb'
+  | 'lens'
+  | 'eyepieceTube';
 
 /**
  * examine: abre la vista de examen (y descubre su pista, si la tiene).
@@ -98,6 +110,13 @@ export interface InteractableDef {
   shape?: ShapeKey;
   /** Punto del suelo desde el que se alcanza (lo usan los tests de alcance). */
   approach: { x: number; z: number };
+  /**
+   * Una vez abierto ya no se cierra y deja de ser interactuable (la puerta entre zonas: así
+   * nadie queda encerrado ni se ocultan los objetos de la otra zona).
+   */
+  staysOpen?: boolean;
+  /** Mientras está cerrado, su caja en planta bloquea el paso (una puerta entre zonas). */
+  blocks?: boolean;
 }
 
 export type ItemIcon =
@@ -109,7 +128,11 @@ export type ItemIcon =
   | 'screwdriver'
   | 'crankArm'
   | 'crankGrip'
-  | 'crank';
+  | 'crank'
+  | 'eyepieceTube'
+  | 'lens'
+  | 'eyepiece'
+  | 'orb';
 
 export interface ItemDef {
   id: string;
@@ -213,7 +236,11 @@ export interface RoomDef {
   /** Nombre visible de la sala y título del resultado (en texts.ts). */
   titleKey: RoomTitleKey;
   /** Acabado de las paredes (papel pintado por defecto). */
-  walls?: 'wallpaper' | 'brick';
+  walls?: 'wallpaper' | 'brick' | 'night';
+  /** Tabiques interiores a toda altura, como rectángulos en planta (paredes entre zonas). */
+  partitions?: readonly Rect[];
+  /** Lámparas del techo (posición en planta); por defecto una en el centro. Máximo 3. */
+  lamps?: readonly { x: number; z: number }[];
   /** Medidas interiores en metros. La sala ocupa x ∈ [-width/2, width/2], z ∈ [-depth/2, depth/2]. */
   width: number;
   depth: number;
@@ -246,9 +273,19 @@ export function wallRects(room: RoomDef): Rect[] {
   ];
 }
 
-/** Obstáculos de movimiento: paredes y muebles. */
+/** Obstáculos de movimiento fijos: paredes, tabiques y muebles. */
 export function roomColliders(room: RoomDef): Rect[] {
-  return [...wallRects(room), ...room.furniture.map(furnitureRect)];
+  return [...wallRects(room), ...(room.partitions ?? []), ...room.furniture.map(furnitureRect)];
+}
+
+/** Rectángulo en planta de un objeto que bloquea el paso mientras está cerrado. */
+export function blockerRect(def: InteractableDef): Rect {
+  return {
+    minX: def.position.x - def.size.x / 2,
+    maxX: def.position.x + def.size.x / 2,
+    minZ: def.position.z - def.size.z / 2,
+    maxZ: def.position.z + def.size.z / 2,
+  };
 }
 
 /** Grosor de las paredes de un mueble hueco a efectos de línea de visión. */
@@ -271,7 +308,7 @@ export function furnitureOccluders(f: FurnitureDef): Aabb[] {
 
 /** Obstáculos de línea de visión en 3D: paredes a toda altura y muebles. */
 export function roomOccluders(room: RoomDef): Aabb[] {
-  const walls = wallRects(room).map((r) => ({
+  const walls = [...wallRects(room), ...(room.partitions ?? [])].map((r) => ({
     minX: r.minX,
     maxX: r.maxX,
     minZ: r.minZ,

@@ -54,22 +54,29 @@ describe('formas', () => {
 });
 
 describe('sequence', () => {
-  it('avanza con el interruptor correcto y termina con el último', () => {
-    expect(pressSwitch([2, 0, 1], 0, 2)).toEqual({ progress: 1, result: 'right' });
-    expect(pressSwitch([2, 0, 1], 1, 0)).toEqual({ progress: 2, result: 'right' });
-    expect(pressSwitch([2, 0, 1], 2, 1)).toEqual({ progress: 3, result: 'solved' });
+  it('cada pulsación solo se apunta; el orden se comprueba con la última', () => {
+    expect(pressSwitch([2, 0, 1], [], 2)).toEqual({ pressed: [2], result: 'pressed' });
+    expect(pressSwitch([2, 0, 1], [2], 0)).toEqual({ pressed: [2, 0], result: 'pressed' });
+    expect(pressSwitch([2, 0, 1], [2, 0], 1)).toEqual({ pressed: [2, 0, 1], result: 'solved' });
   });
 
-  it('equivocarse reinicia; si el equivocado es el primero, cuenta como inicio', () => {
-    expect(pressSwitch([2, 0, 1], 2, 0)).toEqual({ progress: 0, result: 'wrong' });
-    expect(pressSwitch([2, 0, 1], 1, 2)).toEqual({ progress: 1, result: 'wrong' });
+  it('las pulsaciones intermedias no delatan si el orden va bien', () => {
+    // Empezar bien o mal da la misma respuesta hasta accionar el último.
+    expect(pressSwitch([2, 0, 1], [], 2).result).toBe('pressed');
+    expect(pressSwitch([2, 0, 1], [], 1).result).toBe('pressed');
+    expect(pressSwitch([2, 0, 1], [1], 0).result).toBe('pressed');
   });
 
-  it('índices inválidos no cambian nada', () => {
-    for (const index of [-1, 1.5, Number.NaN]) {
-      expect(pressSwitch([0, 1], 1, index)).toEqual({ progress: 1, result: 'invalid' });
+  it('con un orden equivocado, al accionar el último todo vuelve a su sitio', () => {
+    expect(pressSwitch([2, 0, 1], [0, 2], 1)).toEqual({ pressed: [], result: 'wrong' });
+  });
+
+  it('un interruptor ya accionado o inexistente no cambia nada', () => {
+    expect(pressSwitch([2, 0, 1], [2], 2)).toEqual({ pressed: [2], result: 'invalid' });
+    for (const index of [-1, 1.5, Number.NaN, 3]) {
+      expect(pressSwitch([0, 1, 2], [1], index)).toEqual({ pressed: [1], result: 'invalid' });
     }
-    expect(pressSwitch([], 0, 0).result).toBe('invalid');
+    expect(pressSwitch([], [], 0).result).toBe('invalid');
   });
 
   it('el orden se deduce de la pista solo si es único', () => {
@@ -98,16 +105,19 @@ describe('sequence', () => {
     expect(game.pressSwitch('p-switch', 0)).toBe('invalid'); // aún no es visible
     openBox(game);
     const answer = game.answers.codes.get('p-switch') ?? [];
-    const wrongFirst = [0, 1, 2, 3].find((i) => i !== answer[0]) ?? 0;
-    expect(game.pressSwitch('p-switch', wrongFirst)).toBe('wrong');
-    expect(game.sequenceProgress('p-switch')).toBe(0);
+    const reversed = [...answer].reverse();
+    for (const index of reversed.slice(0, -1))
+      expect(game.pressSwitch('p-switch', index)).toBe('pressed');
+    expect(game.pressedSwitches('p-switch')).toEqual(reversed.slice(0, -1));
+    expect(game.pressSwitch('p-switch', reversed[reversed.length - 1] ?? 0)).toBe('wrong');
+    expect(game.pressedSwitches('p-switch')).toEqual([]);
     expect(game.pressSwitch('p-switch', 9)).toBe('invalid');
     for (const index of answer.slice(0, -1))
-      expect(game.pressSwitch('p-switch', index)).toBe('right');
+      expect(game.pressSwitch('p-switch', index)).toBe('pressed');
     expect(game.pressSwitch('p-switch', answer[answer.length - 1] ?? 0)).toBe('solved');
     expect(game.isSolved('p-switch')).toBe(true);
     expect(game.isVisible('dial-note')).toBe(true);
-    expect(game.pressSwitch('p-switch', wrongFirst)).toBe('solved');
+    expect(game.pressSwitch('p-switch', 0)).toBe('solved');
   });
 
   it('la etiqueta del panel de interruptores es «Accionar»', () => {
@@ -267,8 +277,10 @@ describe('sala de prueba con todos los tipos nuevos', () => {
     const game = newGame(77);
     openBox(game);
     const answer = game.answers.codes.get('p-switch') ?? [];
+    // Un intento a medias que empieza mal: el resolvedor lo termina y vuelve a empezar.
+    game.pressSwitch('p-switch', answer[1] ?? 0);
     game.pressSwitch('p-switch', answer[0] ?? 0);
-    game.pressSwitch('p-switch', answer[0] ?? 0);
+    expect(game.pressedSwitches('p-switch')).toHaveLength(2);
     expect(solveFrom(game).finished).toBe(true);
   });
 });

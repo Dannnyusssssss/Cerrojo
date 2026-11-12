@@ -141,6 +141,34 @@ export function itemIcon(icon: ItemIcon, shape?: ShapeKey): SVGSVGElement {
       svg.appendChild(svgEl('circle', { cx: '50', cy: '44', r: '22', ...solid }));
       svg.appendChild(svgEl('line', { x1: '50', y1: '66', x2: '50', y2: '88', ...thin }));
       break;
+    case 'eyepieceTube':
+      svg.appendChild(
+        svgEl('rect', { x: '14', y: '38', width: '72', height: '24', rx: '4', ...thin }),
+      );
+      svg.appendChild(svgEl('line', { x1: '34', y1: '38', x2: '34', y2: '62', ...thin }));
+      svg.appendChild(svgEl('line', { x1: '66', y1: '38', x2: '66', y2: '62', ...thin }));
+      break;
+    case 'lens':
+      svg.appendChild(svgEl('ellipse', { cx: '50', cy: '50', rx: '22', ry: '36', ...thin }));
+      svg.appendChild(svgEl('line', { x1: '44', y1: '30', x2: '44', y2: '46', ...thin }));
+      break;
+    case 'eyepiece':
+      svg.appendChild(
+        svgEl('rect', { x: '10', y: '38', width: '58', height: '24', rx: '4', ...thin }),
+      );
+      svg.appendChild(svgEl('ellipse', { cx: '78', cy: '50', rx: '10', ry: '22', ...solid }));
+      break;
+    case 'orb':
+      svg.appendChild(svgEl('circle', { cx: '50', cy: '50', r: '44', ...strokeStyle('6') }));
+      if (shape !== undefined) {
+        const mark = shapeIcon(shape, true);
+        mark.setAttribute('x', '25');
+        mark.setAttribute('y', '25');
+        mark.setAttribute('width', '50');
+        mark.setAttribute('height', '50');
+        svg.appendChild(mark);
+      }
+      break;
     case 'crank':
       svg.appendChild(svgEl('polyline', { points: '10,28 62,28 62,70', ...strokeStyle('10') }));
       svg.appendChild(svgEl('circle', { cx: '62', cy: '78', r: '14', ...solid }));

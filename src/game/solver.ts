@@ -83,6 +83,17 @@ function attempt(state: GameState, puzzle: PuzzleDef): [number, boolean] {
     case 'sequence': {
       const order = sequenceFromClue(puzzle, known);
       if (order === null) return [0, false];
+      // Si quedó un intento a medias, se termina con los que faltan (vuelven a su sitio).
+      for (
+        let i = 0;
+        i < puzzle.switches.length && state.pressedSwitches(puzzle.id).length > 0;
+        i++
+      ) {
+        if (state.pressedSwitches(puzzle.id).includes(i)) continue;
+        actions += 1;
+        state.pressSwitch(puzzle.id, i);
+      }
+      if (state.isSolved(puzzle.id)) return [actions, true];
       for (const index of order) {
         actions += 1;
         state.pressSwitch(puzzle.id, index);

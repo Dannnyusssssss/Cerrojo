@@ -24,6 +24,7 @@ import {
 } from './prop-kit';
 import { PropView, type PropContext } from './prop-view';
 import { buildSmallProp } from './props-small';
+import { createObservatoryProp } from './props-observatory';
 import { createWorkshopProp } from './props-workshop';
 import type { TextureFactory } from './textures';
 
@@ -46,7 +47,9 @@ function buildChest(def: InteractableDef, tx: TextureFactory): PropView {
   // Placa de la cerradura con cuatro ruedas, en el frente de la caja.
   const brass = metal(0xc9a85b);
   const plate = mesh(new BoxGeometry(w * 0.5, h * 0.3, 0.01), brass);
-  plate.position.set(0, -h * 0.08, d / 2 + 0.005);
+  // La placa queda 4 mm por delante de la pared: si su cara trasera coincidiera con la pared
+  // (de grosor cero), desde dentro parpadearían una contra otra al mover la cámara.
+  plate.position.set(0, -h * 0.08, d / 2 + 0.009);
   const wheelGeo = new CylinderGeometry(0.014, 0.014, 0.02, 12);
   const wheelMat = mat(null, 0x3a2a1a);
   for (let i = 0; i < 4; i++) {
@@ -236,6 +239,10 @@ export function createProp(def: InteractableDef, ctx: PropContext): PropView {
     case 'slotPanel':
       return buildSlotPanel(def, ctx);
     default:
-      return createWorkshopProp(def, ctx) ?? new PropView(def, buildSmallProp(def, ctx), noop);
+      return (
+        createWorkshopProp(def, ctx) ??
+        createObservatoryProp(def, ctx) ??
+        new PropView(def, buildSmallProp(def, ctx), noop)
+      );
   }
 }

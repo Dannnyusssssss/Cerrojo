@@ -2,6 +2,7 @@
  * Capa de paneles de puzzle: abre el panel que corresponde a cada tipo y lo conecta con el
  * mundo. Cerrar (con el botón, Esc o al resolver) avisa al controlador.
  */
+import { TEXTS } from '../data/texts';
 import type { ItemDef, PuzzleDef } from '../game/room';
 import type { World } from '../game/world';
 import { el, setHidden } from './dom';
@@ -42,7 +43,7 @@ export class PuzzlePanels {
     });
     this.sequence = new SequencePanel({
       onPress: (index) => this.world().pressSwitch(this.openPuzzle ?? '', index),
-      progress: () => this.world().state.sequenceProgress(this.openPuzzle ?? ''),
+      pressed: () => this.world().state.pressedSwitches(this.openPuzzle ?? ''),
       onClose: close,
       onSolved: close,
     });
@@ -80,12 +81,13 @@ export class PuzzlePanels {
         break;
       case 'placement':
         this.placement.open(
+          this.targetName(puzzle.target),
           puzzle.slots.map((s) => s.shape),
           selectedItem,
         );
         break;
       case 'sequence':
-        this.sequence.open(puzzle.switches);
+        this.sequence.open(this.targetName(puzzle.target), puzzle.switches);
         break;
       case 'key-lock':
       case 'combine':
@@ -94,6 +96,12 @@ export class PuzzlePanels {
         setHidden(this.root, true);
         break;
     }
+  }
+
+  /** Nombre visible del objeto sobre el que está el puzzle (título del panel). */
+  private targetName(target: string): string {
+    const def = this.world().state.def(target);
+    return def ? TEXTS.objects[def.nameKey] : TEXTS.objects.slotPanel;
   }
 
   /** Cierra el panel abierto y avisa al controlador. */

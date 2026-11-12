@@ -51,8 +51,8 @@ export class GameState {
   private readonly seen = new Set<string>();
   private readonly solved = new Set<string>();
   private readonly placements = new Map<string, (string | null)[]>();
-  /** Interruptores accionados bien seguidos, por puzzle de secuencia. */
-  private readonly sequences = new Map<string, number>();
+  /** Interruptores accionados en el intento en curso, en orden, por puzzle de secuencia. */
+  private readonly sequences = new Map<string, number[]>();
   private finishedFlag = false;
   /** Cuenta los cambios de estado (el render y la interfaz se actualizan al verlo cambiar). */
   version = 0;
@@ -204,6 +204,8 @@ export class GameState {
       }
       return { kind: 'locked', id: def.id };
     }
+    // Lo que se queda abierto (la puerta entre zonas) ya no se vuelve a cerrar.
+    if (this.open.has(def.id) && def.staysOpen === true) return { kind: 'none' };
     if (this.open.has(def.id)) this.open.delete(def.id);
     else this.open.add(def.id);
     this.version += 1;
@@ -255,20 +257,23 @@ export class GameState {
     return 'placed';
   }
 
-  /** Interruptores accionados bien seguidos en un puzzle de secuencia. */
-  sequenceProgress(puzzleId: string): number {
-    return this.sequences.get(puzzleId) ?? 0;
+  /** Interruptores accionados en el intento en curso (en orden de pulsación). */
+  pressedSwitches(puzzleId: string): readonly number[] {
+    return this.sequences.get(puzzleId) ?? [];
   }
 
-  /** Acciona un interruptor. Equivocarse solo reinicia la secuencia. */
+  /**
+   * Acciona un interruptor. Solo al accionar el último se comprueba el orden; si no es el
+   * correcto, todos vuelven a su sitio y se puede volver a intentar sin límite.
+   */
   pressSwitch(puzzleId: string, index: number): PressResult {
     const puzzle = this.puzzles.get(puzzleId);
     if (puzzle?.type !== 'sequence' || !this.isVisible(puzzle.target)) return 'invalid';
     if (this.solved.has(puzzleId)) return 'solved';
-    if (!Number.isInteger(index) || index < 0 || index >= puzzle.switches.length) return 'invalid';
     const answer = this.answers.codes.get(puzzleId) ?? [];
-    const step = pressSwitch(answer, this.sequenceProgress(puzzleId), index);
-    this.sequences.set(puzzleId, step.progress);
+    const step = pressSwitch(answer, this.pressedSwitches(puzzleId), index);
+    if (step.result === 'invalid') return 'invalid';
+    this.sequences.set(puzzleId, step.pressed);
     this.version += 1;
     if (step.result === 'solved') this.solve(puzzle);
     return step.result;

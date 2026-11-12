@@ -11,7 +11,15 @@ import { pickInteractable, type PickResult, type PickTarget, type Ray } from './
 import type { PlaceResult } from './puzzles/placement';
 import type { PressResult } from './puzzles/sequence';
 import { createPlayer, stepPlayer, type PlayerState } from './player';
-import { interactableBox, roomColliders, roomOccluders, type Aabb, type RoomDef } from './room';
+import {
+  blockerRect,
+  interactableBox,
+  roomColliders,
+  roomOccluders,
+  type Aabb,
+  type InteractableDef,
+  type RoomDef,
+} from './room';
 import type { RoomAnswers } from './seeded';
 import { Timer } from './timer';
 
@@ -22,7 +30,13 @@ export class World {
   readonly state: GameState;
   readonly player: PlayerState;
   readonly timer = new Timer();
-  private readonly colliders: Rect[];
+  /** Obstáculos fijos (paredes, tabiques y muebles). */
+  private readonly fixedColliders: Rect[];
+  /** Objetos que bloquean el paso mientras están cerrados (puertas entre zonas). */
+  private readonly blockers: InteractableDef[];
+  /** Obstáculos de este momento: los fijos más las puertas cerradas. */
+  private colliders: Rect[] = [];
+  private collidersVersion = -1;
   private readonly occluders: Aabb[];
   private targets: PickTarget[] = [];
   private targetsVersion = -1;
@@ -33,7 +47,9 @@ export class World {
     this.room = room;
     this.state = new GameState(room, answers);
     this.player = createPlayer(room.spawn);
-    this.colliders = roomColliders(room);
+    this.fixedColliders = roomColliders(room);
+    this.blockers = room.interactables.filter((d) => d.blocks === true);
+    this.refreshColliders();
     this.occluders = roomOccluders(room);
     this.refreshTargets();
   }
@@ -42,6 +58,7 @@ export class World {
   step(input: InputState, dt: number): void {
     input.moveAxes(this.move);
     if (this.move.x !== 0 || this.move.z !== 0) this.timer.start();
+    this.refreshColliders();
     stepPlayer(this.player, this.move, dt, this.colliders, TUNING);
   }
 
@@ -110,13 +127,26 @@ export class World {
     this.refreshTargets();
   }
 
+  /** Rehace la lista de obstáculos solo cuando cambió el estado (se abrió una puerta). */
+  private refreshColliders(): void {
+    if (this.collidersVersion === this.state.version) return;
+    this.collidersVersion = this.state.version;
+    const closed = this.blockers.filter((d) => !this.state.isOpen(d.id)).map(blockerRect);
+    this.colliders =
+      closed.length === 0 ? this.fixedColliders : [...this.fixedColliders, ...closed];
+  }
+
   /** Recalcula las cajas de selección si cambió algo (aperturas, objetos recogidos). */
   private refreshTargets(): void {
     if (this.targetsVersion === this.state.version) return;
     this.targetsVersion = this.state.version;
     this.targets = this.state.visibleIds().flatMap((id) => {
       const def = this.state.def(id);
-      return def ? [{ id, box: interactableBox(def, this.state.isOpen(id)) }] : [];
+      if (!def) return [];
+      const open = this.state.isOpen(id);
+      // Lo que ya no se cierra deja de señalarse una vez abierto.
+      if (open && def.staysOpen === true) return [];
+      return [{ id, box: interactableBox(def, open) }];
     });
   }
 }

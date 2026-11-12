@@ -1,7 +1,8 @@
 /**
- * Panel de interruptores: cada interruptor lleva una forma y un número. Una fila de luces
- * muestra cuántos van bien seguidos; cada luz encendida está rellena y marcada con ✓ (no solo
- * color). Equivocarse apaga las luces y se puede volver a empezar sin límite.
+ * Panel de interruptores: cada interruptor lleva una forma y un número. Los ya accionados en el
+ * intento quedan bajados (borde grueso, flecha ▼ y nombre accesible, no solo color). Las luces
+ * solo cuentan cuántos van accionados: no dicen si el orden es bueno, eso se sabe al accionar el
+ * último. Si el orden no era el correcto, todo vuelve a su sitio y se puede repetir sin límite.
  */
 import type { ShapeKey } from '../data/shapes';
 import { TEXTS } from '../data/texts';
@@ -12,8 +13,8 @@ import { flashRight, flashWrong, panelShell, type PanelShell } from './panel-she
 
 export interface SequenceCallbacks {
   onPress(index: number): PressResult;
-  /** Interruptores accionados bien seguidos. */
-  progress(): number;
+  /** Interruptores accionados en el intento en curso. */
+  pressed(): readonly number[];
   onClose(): void;
   onSolved(): void;
 }
@@ -24,12 +25,13 @@ export class SequencePanel {
   private readonly cb: SequenceCallbacks;
   private switches: readonly ShapeKey[] = [];
   private lights: HTMLSpanElement[] = [];
+  private buttons: HTMLButtonElement[] = [];
   private lightsLabel!: HTMLParagraphElement;
   private solved = false;
 
   constructor(callbacks: SequenceCallbacks) {
     this.cb = callbacks;
-    this.shell = panelShell(TEXTS.sequencePanel.title, TEXTS.sequencePanel.help);
+    this.shell = panelShell(TEXTS.objects.switchboard, TEXTS.sequencePanel.help);
     this.root = this.shell.root;
     const close = el('button', {
       className: 'btn',
@@ -46,7 +48,10 @@ export class SequencePanel {
     return !this.root.hidden;
   }
 
-  open(switches: readonly ShapeKey[]): void {
+  /** Abre el panel con el nombre del objeto (`title`) y sus interruptores. */
+  open(title: string, switches: readonly ShapeKey[]): void {
+    this.shell.title.textContent = title;
+    this.root.setAttribute('aria-label', title);
     this.switches = switches;
     this.solved = false;
     this.shell.message.textContent = '';
@@ -63,18 +68,11 @@ export class SequencePanel {
   private build(): void {
     this.lights = this.switches.map(() => el('span', { className: 'seq-light' }));
     this.lightsLabel = el('p', { className: 'seq-count' });
-    const buttons = this.switches.map((shape, i) => {
-      const b = el(
-        'button',
-        {
-          className: 'btn switch-btn',
-          attrs: {
-            type: 'button',
-            'aria-label': TEXTS.sequencePanel.switchLabel(i + 1, TEXTS.shapes[shape]),
-          },
-        },
-        [shapeIcon(shape, true), el('span', { className: 'switch-number', text: String(i + 1) })],
-      );
+    this.buttons = this.switches.map((shape, i) => {
+      const b = el('button', { className: 'btn switch-btn', attrs: { type: 'button' } }, [
+        shapeIcon(shape, true),
+        el('span', { className: 'switch-number', text: String(i + 1) }),
+      ]);
       b.addEventListener('click', () => {
         this.press(i);
       });
@@ -83,28 +81,41 @@ export class SequencePanel {
     this.shell.body.replaceChildren(
       el('div', { className: 'seq-lights', attrs: { 'aria-hidden': 'true' } }, this.lights),
       this.lightsLabel,
-      el('div', { className: 'switches-row' }, buttons),
+      el('div', { className: 'switches-row' }, this.buttons),
     );
-    this.paintLights();
+    this.paint();
   }
 
-  private paintLights(): void {
-    const lit = this.cb.progress();
+  /** Refleja qué interruptores están bajados y cuántas luces hay encendidas. */
+  private paint(): void {
+    const pressed = this.cb.pressed();
+    const count = this.solved ? this.switches.length : pressed.length;
     this.lights.forEach((light, i) => {
-      const on = i < lit;
+      const on = i < count;
       light.classList.toggle('seq-light-on', on);
-      light.textContent = on ? '✓' : '';
+      light.textContent = on ? '●' : '';
     });
-    this.lightsLabel.textContent = TEXTS.sequencePanel.lights(lit, this.switches.length);
+    this.lightsLabel.textContent = TEXTS.sequencePanel.lights(count, this.switches.length);
+    this.buttons.forEach((b, i) => {
+      const down = pressed.includes(i);
+      const shape = TEXTS.shapes[this.switches[i] ?? 'circle'];
+      b.classList.toggle('switch-down', down);
+      b.setAttribute('aria-pressed', String(down));
+      b.setAttribute(
+        'aria-label',
+        down
+          ? TEXTS.sequencePanel.switchDown(i + 1, shape)
+          : TEXTS.sequencePanel.switchLabel(i + 1, shape),
+      );
+    });
   }
 
   private press(index: number): void {
     if (this.solved) return;
     const result = this.cb.onPress(index);
-    this.paintLights();
     switch (result) {
-      case 'right':
-        this.shell.message.textContent = TEXTS.sequencePanel.right;
+      case 'pressed':
+        this.shell.message.textContent = TEXTS.sequencePanel.pressed;
         this.root.classList.remove('panel-wrong');
         break;
       case 'wrong':
@@ -121,5 +132,6 @@ export class SequencePanel {
       case 'invalid':
         break;
     }
+    this.paint();
   }
 }

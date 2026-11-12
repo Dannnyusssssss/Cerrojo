@@ -13,6 +13,7 @@ import {
   SphereGeometry,
   type Material,
   type Object3D,
+  type Texture,
 } from 'three';
 import { QUALITY_PROFILES, type Quality } from '../data/config';
 import type { GameState } from '../game/game-state';
@@ -22,6 +23,7 @@ import { buildOpenBox, forEachMesh, interiorMaterial } from './prop-kit';
 import type { PropView } from './prop-view';
 import { createProp } from './props';
 import { TextureFactory } from './textures';
+import { nightWall } from './textures-extra';
 
 export class RoomView {
   readonly group = new Group();
@@ -86,10 +88,7 @@ export class RoomView {
 
     const wallMaterial = (length: number): MeshStandardMaterial =>
       new MeshStandardMaterial({
-        map:
-          room.walls === 'brick'
-            ? this.textures.brick({ x: length / 1.2, y: h / 1.2 })
-            : this.textures.wallpaper({ x: length / 1.5, y: h / 1.5 }),
+        map: this.wallTexture(room, length, h),
         roughness: 0.95,
       });
     const walls: { x: number; z: number; ry: number; length: number }[] = [
@@ -115,6 +114,28 @@ export class RoomView {
       this.group.add(board);
     }
     this.group.add(floor, ceiling);
+    // Tabiques interiores: bloques a toda altura con el mismo acabado que las paredes.
+    for (const p of room.partitions ?? []) {
+      const pw = p.maxX - p.minX;
+      const pd = p.maxZ - p.minZ;
+      const block = new Mesh(new BoxGeometry(pw, h, pd), wallMaterial(Math.max(pw, pd)));
+      block.position.set((p.minX + p.maxX) / 2, h / 2, (p.minZ + p.maxZ) / 2);
+      block.castShadow = true;
+      block.receiveShadow = true;
+      this.group.add(block);
+    }
+  }
+
+  /** Textura de las paredes según el acabado de la sala. */
+  private wallTexture(room: RoomDef, length: number, h: number): Texture {
+    switch (room.walls) {
+      case 'brick':
+        return this.textures.brick({ x: length / 1.2, y: h / 1.2 });
+      case 'night':
+        return nightWall(this.textures, { x: length / 1.5, y: h / 1.5 });
+      default:
+        return this.textures.wallpaper({ x: length / 1.5, y: h / 1.5 });
+    }
   }
 
   private buildFurniture(f: FurnitureDef): Object3D {
@@ -188,6 +209,13 @@ export class RoomView {
             }
           }
         }
+        break;
+      }
+      case 'pedestal': {
+        // Pie de madera oscura: columna con base y tapa algo más anchas.
+        add(f.w * 0.7, f.h - 0.08, f.d * 0.7, 0, f.h / 2, 0, dark);
+        add(f.w, 0.04, f.d, 0, 0.02, 0, dark);
+        add(f.w, 0.04, f.d, 0, f.h - 0.024, 0, wood);
         break;
       }
       case 'crate': {
@@ -264,19 +292,24 @@ export class RoomView {
 
   private buildLights(room: RoomDef, shadows: boolean): void {
     this.group.add(new HemisphereLight(0xfff1dc, 0x5a4636, 1.2));
-    const lamp = new PointLight(0xffd9a8, 9, 12, 1.6);
-    lamp.position.set(0, room.height - 0.35, 0);
-    lamp.castShadow = shadows;
-    lamp.shadow.mapSize.set(1024, 1024);
-    lamp.shadow.bias = -0.002;
-    this.group.add(lamp);
-    // Bombilla visible: material emisivo, no una luz adicional.
-    const bulb = new Mesh(
-      new SphereGeometry(0.08, 16, 12),
-      new MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffd9a8, emissiveIntensity: 2 }),
-    );
-    bulb.position.copy(lamp.position);
-    this.group.add(bulb);
+    const lamps = room.lamps ?? [{ x: 0, z: 0 }];
+    // Con varias lámparas, cada una alumbra un poco menos; solo la primera da sombras.
+    const intensity = 9 / Math.sqrt(lamps.length);
+    lamps.forEach((spot, i) => {
+      const lamp = new PointLight(0xffd9a8, intensity, 12, 1.6);
+      lamp.position.set(spot.x, room.height - 0.35, spot.z);
+      lamp.castShadow = shadows && i === 0;
+      lamp.shadow.mapSize.set(1024, 1024);
+      lamp.shadow.bias = -0.002;
+      this.group.add(lamp);
+      // Bombilla visible: material emisivo, no una luz adicional.
+      const bulb = new Mesh(
+        new SphereGeometry(0.08, 16, 12),
+        new MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffd9a8, emissiveIntensity: 2 }),
+      );
+      bulb.position.copy(lamp.position);
+      this.group.add(bulb);
+    });
   }
 
   dispose(): void {

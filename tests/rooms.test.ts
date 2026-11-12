@@ -117,6 +117,8 @@ describe.each(ROOMS.map((room) => [room.id, room] as const))('%s', (_id, room: R
       for (const def of room.interactables) {
         if (!world.state.isVisible(def.id)) continue;
         const open = world.state.isOpen(def.id);
+        // Lo que se queda abierto (la puerta de la cúpula) deja de señalarse a propósito.
+        if (open && def.staysOpen === true) continue;
         const target = { ...def.position };
         if (open && def.openOffset) {
           target.x += def.openOffset.x;
