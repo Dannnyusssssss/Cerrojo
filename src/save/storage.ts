@@ -37,6 +37,12 @@ export class SaveStore {
   private readonly backend: StorageLike | null;
   private readonly defaults: Readonly<Settings>;
   private data: SaveData;
+  private failureReported = false;
+  /**
+   * Se llama una sola vez, la primera vez que no se puede escribir (almacenamiento bloqueado,
+   * lleno o inexistente), sea lo que sea lo que se guardaba: ajustes, marcas o partida.
+   */
+  onWriteFailure: (() => void) | null = null;
 
   constructor(backend: StorageLike | null, defaults: Readonly<Settings>) {
     this.backend = backend;
@@ -101,13 +107,22 @@ export class SaveStore {
   }
 
   private write(): boolean {
-    if (this.backend === null) return false;
+    if (this.backend === null) return this.failed();
     try {
       this.backend.setItem(STORAGE_KEY, serializeSave(this.data));
       return true;
     } catch (error) {
       logError('save.write', error);
-      return false;
+      return this.failed();
     }
+  }
+
+  /** Avisa del primer fallo de escritura (solo una vez por sesión) y devuelve false. */
+  private failed(): false {
+    if (!this.failureReported) {
+      this.failureReported = true;
+      this.onWriteFailure?.();
+    }
+    return false;
   }
 }

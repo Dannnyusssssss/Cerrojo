@@ -21,6 +21,8 @@ export interface BindingCallbacks {
   onUnlockedClick(): void;
   onInspectDrag(dx: number, dy: number): void;
   onPointerLockChange(locked: boolean): void;
+  /** El navegador rechazó la captura del puntero (el juego sigue con las flechas). */
+  onPointerLockError(): void;
   onTouchDetected(): void;
   onFocusLost(): void;
   /** True si las teclas 1 a 8 eligen objetos del inventario en este momento. */
@@ -57,6 +59,10 @@ export class InputBinding {
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('visibilitychange', this.onVisibility);
     document.addEventListener('pointerlockchange', this.onLockChange);
+    document.addEventListener('pointerlockerror', this.onLockError);
+    // Un toque en cualquier parte (también en los botones del menú) activa el modo táctil
+    // antes de entrar a la sala; así no se pide una captura del puntero que fallaría.
+    window.addEventListener('pointerdown', this.onAnyPointerDown, { capture: true });
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointermove', this.onPointerMove);
     canvas.addEventListener('pointerup', this.onPointerUp);
@@ -139,8 +145,15 @@ export class InputBinding {
     this.cb.onPointerLockChange(this.pointerLocked);
   };
 
-  private readonly onPointerDown = (event: PointerEvent): void => {
+  private readonly onLockError = (): void => {
+    this.cb.onPointerLockError();
+  };
+
+  private readonly onAnyPointerDown = (event: PointerEvent): void => {
     if (event.pointerType === 'touch') this.cb.onTouchDetected();
+  };
+
+  private readonly onPointerDown = (event: PointerEvent): void => {
     if (event.pointerType === 'mouse' && this.pointerLocked) {
       if (event.button === 0 && this.cb.exploring()) this.cb.onAction('interact');
       return;

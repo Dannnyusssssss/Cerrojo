@@ -236,6 +236,11 @@ body {
 
 .setting-row label {
   flex: 1 1 180px;
+  /* La etiqueta también activa su control: toda la fila es un objetivo de 44 px de alto. */
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
 }
 
 .range {
@@ -245,8 +250,9 @@ body {
 }
 
 .check {
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
+  margin: 6px;
   accent-color: var(--accent);
 }
 
@@ -458,6 +464,12 @@ output {
 
 .touch-mode .toast {
   top: calc(max(16px, env(safe-area-inset-top)) + 72px);
+}
+
+/* En táctil el objetivo ocupa el sitio del aviso: si está visible, el aviso va sobre los controles. */
+.touch-mode .hud:has(.hud-hint:not([hidden])) .toast {
+  top: auto;
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 170px);
 }
 
 /* ---------- Paneles de puzzle ---------- */

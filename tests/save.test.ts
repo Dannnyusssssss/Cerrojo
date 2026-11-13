@@ -87,6 +87,34 @@ describe('guardado de ajustes', () => {
     expect(store.saveSettings(custom)).toBe(false);
   });
 
+  it('avisa una sola vez del fallo de escritura, sea lo que sea lo que se guarda', () => {
+    for (const backend of [new FullStorage(), new BlockedStorage(), null]) {
+      const store = new SaveStore(backend, DEFAULT_SETTINGS);
+      store.load();
+      let warnings = 0;
+      store.onWriteFailure = () => {
+        warnings += 1;
+      };
+      // Una marca, la partida en curso, los ajustes y borrar datos: todos fallan.
+      store.saveRecord('room-1', 600, 0);
+      store.saveCurrent(null);
+      store.saveSettings(custom);
+      store.clearProgress();
+      expect(warnings).toBe(1);
+    }
+  });
+
+  it('con un almacenamiento que funciona nunca avisa', () => {
+    const store = new SaveStore(new MemoryStorage(), DEFAULT_SETTINGS);
+    let warnings = 0;
+    store.onWriteFailure = () => {
+      warnings += 1;
+    };
+    store.saveSettings(custom);
+    store.saveRecord('room-1', 600, 0);
+    expect(warnings).toBe(0);
+  });
+
   it('valida lo que se guarda aunque venga de la interfaz', () => {
     const storage = new MemoryStorage();
     const store = new SaveStore(storage, DEFAULT_SETTINGS);

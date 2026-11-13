@@ -6,7 +6,7 @@ export const TEXTS = {
   tagline: 'Examina, relaciona y abre. Sin prisa.',
   contentNote:
     'Misterio tranquilo, apto para todos. Sin sustos, sin violencia y sin cuenta atrás. ' +
-    'El juego guarda tus ajustes solo en este navegador.',
+    'El juego guarda tus ajustes, tus marcas y la partida en curso solo en este navegador.',
   start: {
     play: 'Jugar',
     continueGame: (room: string): string => `Continuar: ${room}`,
@@ -365,7 +365,11 @@ export const TEXTS = {
     noWebgl:
       'Tu navegador o tu dispositivo no puede mostrar gráficos 3D (WebGL). Prueba con otro navegador o activa la aceleración por hardware.',
     contextLost: 'Se perdieron los gráficos. Espera un momento; el juego seguirá en pausa.',
-    saveUnavailable: 'No se pueden guardar los ajustes en este navegador. Puedes jugar igual.',
+    contextRestored: 'Los gráficos se recuperaron. Continúa cuando quieras.',
+    saveUnavailable:
+      'Este navegador no deja guardar: ni ajustes, ni marcas, ni la partida. Puedes jugar igual.',
+    pointerLock:
+      'No se pudo capturar el ratón. Haz clic en la escena para intentarlo de nuevo o usa las flechas para mirar.',
   },
   debug: {
     fps: 'FPS',

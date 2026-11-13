@@ -63,8 +63,9 @@ export class PropView {
     this.root.visible = visible;
   }
 
-  update(dt: number): void {
-    if (this.progress === this.target) return;
+  /** Avanza la animación de apertura. Devuelve true si el objeto se movió en este paso. */
+  update(dt: number): boolean {
+    if (this.progress === this.target) return false;
     const step = OPEN_SPEED * dt;
     this.progress =
       this.target > this.progress
@@ -73,6 +74,7 @@ export class PropView {
     // Suavizado de entrada y salida.
     const t = this.progress * this.progress * (3 - 2 * this.progress);
     this.applyOpen(t);
+    return true;
   }
 }
 

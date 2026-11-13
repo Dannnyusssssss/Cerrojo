@@ -8,6 +8,7 @@ import type { AudioEngine } from './audio/engine';
 import { WHEEL_SIGNAL } from './game/signals';
 import type { ActionIntent, InputState } from './core/input';
 import { INSPECT, type Settings } from './data/config';
+import { TEXTS } from './data/texts';
 import type { Mode, ModeEvent } from './game/mode';
 import type { ItemDef } from './game/room';
 import type { World } from './game/world';
@@ -154,6 +155,8 @@ export function buildGameUi(
     },
   });
   stage.append(hud.root, inventoryBar.root, touch.root, panels.root, hintPanel.root, menus.root);
+  // Se vio un toque: a partir de ahí no se avisa de la captura del puntero.
+  let touchSeen = false;
   const binding = new InputBinding(input, view.canvas, {
     inGame: () => app.currentMode === 'playing' || app.currentMode === 'inspecting',
     exploring: () => app.currentMode === 'playing',
@@ -174,7 +177,15 @@ export function buildGameUi(
     onPointerLockChange: (locked) => {
       app.onPointerLockChange(locked);
     },
+    onPointerLockError: () => {
+      // Solo importa explorando con ratón: en menús y paneles se usa el cursor libre, y en
+      // táctil no hay captura que pedir.
+      if (app.currentMode === 'playing' && !touchSeen) {
+        hud.showToast(TEXTS.errors.pointerLock, 5000);
+      }
+    },
     onTouchDetected: () => {
+      touchSeen = true;
       app.enableTouch();
     },
     onFocusLost: () => {

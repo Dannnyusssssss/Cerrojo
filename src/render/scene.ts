@@ -23,6 +23,15 @@ export class SceneView {
   private readonly onWindowResize = (): void => {
     this.resize();
   };
+  /**
+   * Consulta que deja de cumplirse cuando cambia la densidad de píxeles (mover la ventana a
+   * otra pantalla). Eso no siempre dispara 'resize', así que se vigila aparte.
+   */
+  private pixelRatioQuery: MediaQueryList | null = null;
+  private readonly onPixelRatioChange = (): void => {
+    this.watchPixelRatio();
+    this.resize();
+  };
 
   constructor(container: HTMLElement, quality: Quality, fov: number) {
     this.container = container;
@@ -37,6 +46,8 @@ export class SceneView {
     }
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.shadowMap.type = PCFShadowMap;
+    // Las sombras se recalculan solo cuando la sala cambia (ver RoomView.takeShadowsDirty).
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.domElement.className = 'game-canvas';
     this.renderer.domElement.tabIndex = -1;
     this.scene.background = new Color(0x1d1a17);
@@ -47,7 +58,17 @@ export class SceneView {
     this.resizeObserver.observe(container);
     window.addEventListener('resize', this.onWindowResize);
     window.addEventListener('orientationchange', this.onWindowResize);
+    this.watchPixelRatio();
     this.resize();
+  }
+
+  /** Vuelve a vigilar la densidad actual (la consulta anterior ya no sirve). */
+  private watchPixelRatio(): void {
+    this.pixelRatioQuery?.removeEventListener('change', this.onPixelRatioChange);
+    this.pixelRatioQuery = null;
+    if (typeof window.matchMedia !== 'function') return;
+    this.pixelRatioQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    this.pixelRatioQuery.addEventListener('change', this.onPixelRatioChange);
   }
 
   get canvas(): HTMLCanvasElement {
@@ -80,12 +101,14 @@ export class SceneView {
 
   private applyQuality(): void {
     this.renderer.shadowMap.enabled = QUALITY_PROFILES[this.quality].shadows;
+    this.renderer.shadowMap.needsUpdate = true;
   }
 
   dispose(): void {
     this.resizeObserver.disconnect();
     window.removeEventListener('resize', this.onWindowResize);
     window.removeEventListener('orientationchange', this.onWindowResize);
+    this.pixelRatioQuery?.removeEventListener('change', this.onPixelRatioChange);
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

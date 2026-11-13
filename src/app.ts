@@ -62,7 +62,6 @@ export class App implements UiController {
   private ui!: GameUi;
   private screens!: ScreenFlow;
   private debugOverlay: DebugOverlay | null = null;
-  private saveWarned = false;
   private tutorialDone = false;
   private finishTimer: number | undefined;
   private lastTime = 0;
@@ -97,6 +96,10 @@ export class App implements UiController {
       return;
     }
     this.buildUi(stage);
+    // Si el navegador no deja guardar (bloqueado o lleno), se avisa una vez y se juega igual.
+    this.store.onWriteFailure = (): void => {
+      this.ui.hud.showToast(TEXTS.errors.saveUnavailable, 6000);
+    };
     // Sala de fondo del menú; no toca la partida guardada hasta que se elija jugar.
     this.newGame(this.progress.seed);
     this.applySettings();
@@ -146,6 +149,11 @@ export class App implements UiController {
       event.preventDefault();
       this.dispatch('focusLost');
       this.ui.hud.showToast(TEXTS.errors.contextLost, 6000);
+    });
+    // Al recuperar los gráficos se reconstruye la sala (texturas y sombras) y se sigue en pausa.
+    this.view.canvas.addEventListener('webglcontextrestored', () => {
+      this.view.rebuild(this.world.state, this.settings.quality);
+      this.ui.hud.showToast(TEXTS.errors.contextRestored, 5000);
     });
   }
 
@@ -433,12 +441,8 @@ export class App implements UiController {
 
   updateSettings(values: Settings): void {
     const previousQuality = this.settings.quality;
-    const saved = this.store.saveSettings(values);
+    this.store.saveSettings(values);
     this.settings = this.store.getSettings();
-    if (!saved && !this.saveWarned) {
-      this.saveWarned = true;
-      this.ui.hud.showToast(TEXTS.errors.saveUnavailable, 5000);
-    }
     this.applySettings();
     // Cambiar la calidad reconstruye la sala (tamaño de texturas y sombras).
     if (this.settings.quality !== previousQuality) {

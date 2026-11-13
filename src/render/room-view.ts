@@ -30,6 +30,11 @@ export class RoomView {
   readonly props = new Map<string, PropView>();
   private readonly textures: TextureFactory;
   private syncedVersion = -1;
+  /**
+   * Las sombras no se recalculan en cada frame (con una luz puntual son 6 pasadas): solo
+   * cuando algo de la sala cambió. Empieza en true para dibujarlas al cargar.
+   */
+  private shadowsDirty = true;
 
   constructor(room: RoomDef, quality: Quality, answers: RoomAnswers) {
     const profile = QUALITY_PROFILES[quality];
@@ -51,6 +56,7 @@ export class RoomView {
   sync(state: GameState, instant: boolean): void {
     if (!instant && this.syncedVersion === state.version) return;
     this.syncedVersion = state.version;
+    this.shadowsDirty = true;
     for (const [id, prop] of this.props) {
       const def = prop.def;
       prop.setVisible(state.isVisible(id));
@@ -64,7 +70,16 @@ export class RoomView {
   }
 
   update(dt: number): void {
-    for (const prop of this.props.values()) prop.update(dt);
+    for (const prop of this.props.values()) {
+      if (prop.update(dt)) this.shadowsDirty = true;
+    }
+  }
+
+  /** Devuelve si hay que recalcular las sombras en el próximo dibujo y borra la marca. */
+  takeShadowsDirty(): boolean {
+    const dirty = this.shadowsDirty;
+    this.shadowsDirty = false;
+    return dirty;
   }
 
   private buildShell(room: RoomDef): void {

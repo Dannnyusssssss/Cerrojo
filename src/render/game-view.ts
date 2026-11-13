@@ -85,6 +85,8 @@ export class GameView {
   render(player: PlayerState, alpha: number): number {
     const { renderer, scene, camera } = this.scene;
     applyCamera(camera, player, alpha, PLAYER.eyeHeight);
+    // La cámara no proyecta sombras: solo se recalculan si la sala cambió.
+    if (this.roomView?.takeShadowsDirty()) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
     const calls = renderer.info.render.calls;
     this.inspect.render(renderer, camera.aspect);
