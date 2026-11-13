@@ -1,0 +1,102 @@
+# Verifica cada cambio y publica el juego en GitHub Pages solo si todo pasa.
+# Las acciones van fijadas por hash de commit (la versión está en el comentario) para que no
+# puedan cambiar por debajo.
+name: Verificar y publicar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Por defecto, solo lectura. El job de despliegue pide lo mínimo que necesita Pages.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+
+      - name: Instalar dependencias (lockfile, sin scripts de instalación)
+        run: npm ci --ignore-scripts
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm run test
+
+      - name: Auditoría de dependencias del juego publicado
+        run: npm audit --omit=dev
+
+      - name: Build (incluye la comprobación de tipos)
+        run: npm run build
+
+      - name: Buscar secretos y source maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Patrones de claves y tokens conocidos. Este archivo se excluye porque los contiene.
+          patterns='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{40,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk-[A-Za-z0-9_-]{20,}|(api[_-]?key|secret|password|passwd|token)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"']{8,}["'"'"']'
+          found=0
+          # grep devuelve 0 si encuentra, 1 si no encuentra y otro valor si falla: un fallo de
+          # la búsqueda nunca debe pasar por "sin hallazgos".
+          check() {
+            local status=0
+            "$@" || status=$?
+            if [ "$status" -eq 0 ]; then found=1
+            elif [ "$status" -ne 1 ]; then echo "La búsqueda falló ($status)"; exit 2; fi
+          }
+          check git grep -n -I -i -E -e "$patterns" -- . ':!.github/workflows/deploy.yml' ':!package-lock.json'
+          check grep -rn -I -i -E -e "$patterns" dist
+          if find dist -name '*.map' | grep .; then
+            echo "Hay source maps en dist/"
+            found=1
+          fi
+          if git ls-files | grep -E '(^|/)\.env($|\.)'; then
+            echo "Hay archivos .env versionados"
+            found=1
+          fi
+          if [ "$found" -ne 0 ]; then
+            echo "Se encontró algo que no debe publicarse."
+            exit 1
+          fi
+          echo "Sin secretos ni source maps."
+
+      - name: Preparar el sitio para Pages
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+  deploy:
+    # Solo desde main y nunca desde un pull request (código de terceros no publica ni recibe permisos).
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publicar en GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

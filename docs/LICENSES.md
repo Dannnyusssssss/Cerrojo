@@ -24,3 +24,16 @@ El build publica junto al juego el archivo `third-party-licenses.md` con el text
 | @types/three      | 0.187.0 | MIT        | https://github.com/DefinitelyTyped/DefinitelyTyped     |
 
 Las dependencias indirectas de estas herramientas figuran en `package-lock.json`.
+
+## Acciones de GitHub usadas en el despliegue (no se incluyen en el juego publicado)
+
+| Acción                        | Versión | Licencia | Repositorio                                      |
+| ----------------------------- | ------- | -------- | ------------------------------------------------ |
+| actions/checkout              | 7.0.1   | MIT      | https://github.com/actions/checkout              |
+| actions/setup-node            | 7.1.0   | MIT      | https://github.com/actions/setup-node            |
+| actions/upload-pages-artifact | 5.0.0   | MIT      | https://github.com/actions/upload-pages-artifact |
+| actions/deploy-pages          | 5.0.1   | MIT      | https://github.com/actions/deploy-pages          |
+
+## Recursos propios
+
+El favicon (`public/favicon.svg` y `public/favicon.png`) y la portada (`public/cover.png`, una captura del juego) son propios.

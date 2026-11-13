@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint .",
-    "format": "prettier --write src tests docs index.html vite.config.ts eslint.config.js package.json tsconfig.json"
+    "format": "prettier --write src tests docs .github README.md index.html vite.config.ts eslint.config.js package.json tsconfig.json"
   },
   "dependencies": {
     "three": "0.187.0"
