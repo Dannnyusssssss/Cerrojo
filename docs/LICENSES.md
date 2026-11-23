@@ -36,4 +36,4 @@ Las dependencias indirectas de estas herramientas figuran en `package-lock.json`
 
 ## Recursos propios
 
-El favicon (`public/favicon.svg` y `public/favicon.png`) y la portada (`public/cover.png`, una captura del juego) son propios.
+El favicon (`public/favicon.svg` y `public/favicon.png`) y la portada (`docs/cover.png`, una captura del juego con el título y el lema añadidos) son propios.

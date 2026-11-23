@@ -23,8 +23,8 @@ src/
   ui/                interfaz en DOM: HUD, inventario, paneles de cerradura, menús, controles táctiles
   audio/             sonido sintetizado con WebAudio
 tests/               tests de la lógica, de las salas y de entradas hostiles
-public/              favicon e imagen de portada
-docs/                esta documentación, licencias y parámetros de depuración
+public/              favicon
+docs/                esta documentación, licencias, parámetros de depuración e imagen de portada
 ```
 
 ## Capas y dependencias
