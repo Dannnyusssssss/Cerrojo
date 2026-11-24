@@ -17,9 +17,9 @@ El build publica junto al juego el archivo `third-party-licenses.md` con el text
 | vite              | 8.3.6   | MIT        | https://github.com/vitejs/vite                         |
 | typescript        | 6.0.3   | Apache-2.0 | https://github.com/microsoft/TypeScript                |
 | vitest            | 5.1.0   | MIT        | https://github.com/vitest-dev/vitest                   |
-| eslint            | 10.14.0 | MIT        | https://github.com/eslint/eslint                       |
+| eslint            | 10.15.0 | MIT        | https://github.com/eslint/eslint                       |
 | @eslint/js        | 10.0.1  | MIT        | https://github.com/eslint/eslint                       |
-| typescript-eslint | 8.72.1  | MIT        | https://github.com/typescript-eslint/typescript-eslint |
+| typescript-eslint | 8.74.0  | MIT        | https://github.com/typescript-eslint/typescript-eslint |
 | prettier          | 3.9.10  | MIT        | https://github.com/prettier/prettier                   |
 | @types/three      | 0.187.0 | MIT        | https://github.com/DefinitelyTyped/DefinitelyTyped     |
 
